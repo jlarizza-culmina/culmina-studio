@@ -28,7 +28,7 @@ export function AuthProvider({ children }) {
   async function fetchEndUser(supabaseUid) {
     const { data, error } = await supabase
       .from('endusers')
-      .select('*, contacts(firstname, lastname, nickname, primemailaddress, profileicon, timezone)')
+      .select('*, contacts(*)')
       .eq('supabase_uid', supabaseUid)
       .single()
     if (!error && data) setEndUser(data)

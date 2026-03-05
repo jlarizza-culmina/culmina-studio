@@ -14,6 +14,7 @@ const LEVEL_COLORS = { TITLE:GOLD, ARC:'#9C7AC8', ACT:'#7A9EC8', EPISODE:'#4A9C7
 const CHILD_MAP    = { TITLE:'ARC', ARC:'ACT', ACT:'EPISODE', EPISODE:'SHOT', SHOT:'TAKE' }
 
 const AI_MODELS    = ['Veo 2','Veo 3','Sora','Runway Gen-3','Kling','Pika 2']
+const CURRENCIES   = ['USD','EUR','GBP','CAD','AUD','JPY','CNY','KRW','MXN','BRL']
 const LIGHTING     = ['Natural Light','Key Light','High Key','Low Key','Three-Point','Rembrandt','Butterfly','Split','Rim/Back','Practical','Golden Hour','Blue Hour','Motivated','Cinematic Contrast']
 const STATUSES     = ['development','pre_production','in_production','post_production','distribution','completed','paused']
 
@@ -69,6 +70,7 @@ function DetailPanel({ node, onRefresh, onDeactivate }) {
       synopsis:         node.synopsis         || '',
       notes:            node.notes            || '',
       productionstatus: node.productionstatus || 'development',
+      basecurrency:     node.basecurrency     || 'USD',
       aimodel:          node.aimodel          || 'Veo 2',
       lightingtype:     node.lightingtype     || '',
       characters:       node.characters       || '',
@@ -155,6 +157,19 @@ function DetailPanel({ node, onRefresh, onDeactivate }) {
         style={{...inp, cursor:'pointer'}}>
         {STATUSES.map(s=><option key={s} value={s}>{s.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())}</option>)}
       </select>
+
+      {/* Title-specific fields */}
+      {node.productiongroup === 'TITLE' && (
+        <>
+          <div style={{ height:'1px', background:BORDER, margin:'8px 0 24px' }} />
+          <div style={{ fontSize:'0.68rem', color:CHARCOAL, letterSpacing:'0.15em', textTransform:'uppercase', marginBottom:'16px' }}>Title Settings</div>
+          <label style={lbl}>Base Currency</label>
+          <select value={form.basecurrency||'USD'} onChange={e=>setForm(f=>({...f,basecurrency:e.target.value}))}
+            style={{...inp, cursor:'pointer'}}>
+            {CURRENCIES.map(c=><option key={c}>{c}</option>)}
+          </select>
+        </>
+      )}
 
       {/* Shot-specific fields */}
       {isShot && (
