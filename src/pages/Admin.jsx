@@ -9,59 +9,6 @@ const SURFACE2 = '#111009'
 const BORDER = 'rgba(201,146,74,0.12)'
 const MUTED = '#6A6560'
 
-const MOCK_USERS = [
-  { id: 1, login: 'admin@culminastudio.com', name: 'Joe Larizza',    roles: ['SysAdmin'], status: 'A', mfa: true,  lastLogin: '2h ago' },
-  { id: 2, login: 'sarah@culminastudio.com', name: 'Sarah Chen',     roles: ['Producer'], status: 'A', mfa: true,  lastLogin: '1d ago' },
-  { id: 3, login: 'mike@example.com',        name: 'Mike Torres',    roles: ['Author'],   status: 'A', mfa: false, lastLogin: '3d ago' },
-  { id: 4, login: 'anna@example.com',        name: 'Anna Williams',  roles: ['Viewer'],   status: 'H', mfa: false, lastLogin: '2w ago' },
-]
-
-const MOCK_ROLES = [
-  { id: 1, name: 'SysAdmin',  group: 'Administration', active: true },
-  { id: 2, name: 'Producer',  group: 'Production',     active: true },
-  { id: 3, name: 'Author',    group: 'Content',        active: true },
-  { id: 4, name: 'Viewer',    group: 'Content',        active: true },
-]
-
-const MOCK_NVGROUPS = [
-  { group: 'ActiveStatus',      count: 4  },
-  { group: 'AIModel',           count: 6  },
-  { group: 'AssetType',         count: 6  },
-  { group: 'Genre',             count: 12 },
-  { group: 'Lighting',          count: 14 },
-  { group: 'ManuscriptStatus',  count: 5  },
-  { group: 'Platform',          count: 5  },
-  { group: 'ProductionStatus',  count: 7  },
-  { group: 'TimeZone',          count: 38 },
-]
-
-const MOCK_NVPAIRS = {
-  AIModel: [
-    { name: 'Veo 2',       value: 'veo2',      active: true  },
-    { name: 'Veo 3',       value: 'veo3',      active: true  },
-    { name: 'Sora',        value: 'sora',      active: true  },
-    { name: 'Runway Gen-3',value: 'runway3',   active: true  },
-    { name: 'Kling',       value: 'kling',     active: true  },
-    { name: 'Pika 2',      value: 'pika2',     active: false },
-  ],
-  Lighting: [
-    { name: 'Natural Light',      value: 'natural',     active: true },
-    { name: 'Key Light',          value: 'key',         active: true },
-    { name: 'High Key',           value: 'highkey',     active: true },
-    { name: 'Low Key',            value: 'lowkey',      active: true },
-    { name: 'Three-Point',        value: 'threepoint',  active: true },
-    { name: 'Rembrandt',          value: 'rembrandt',   active: true },
-    { name: 'Butterfly',          value: 'butterfly',   active: true },
-    { name: 'Split',              value: 'split',       active: true },
-    { name: 'Rim/Back',           value: 'rim',         active: true },
-    { name: 'Practical',          value: 'practical',   active: true },
-    { name: 'Golden Hour',        value: 'goldenhour',  active: true },
-    { name: 'Blue Hour',          value: 'bluehour',    active: true },
-    { name: 'Motivated',          value: 'motivated',   active: true },
-    { name: 'Cinematic Contrast', value: 'cinematic',   active: true },
-  ],
-}
-
 const SYSTEM_STATUS = [
   { label: 'Supabase',          status: 'connected', detail: 'culmina-studio.supabase.co' },
   { label: 'Google Cloud',      status: 'connected', detail: 'culmina-studio-prod' },
@@ -69,64 +16,152 @@ const SYSTEM_STATUS = [
   { label: 'Vercel Deployment', status: 'connected', detail: 'culminastudio.com' },
 ]
 
+const lbl = { display: 'block', fontSize: '0.68rem', color: CHARCOAL, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '6px' }
+const inp = { width: '100%', background: SURFACE2, border: `1px solid ${BORDER}`, color: CREAM, padding: '9px 12px', fontFamily: 'DM Sans, sans-serif', fontSize: '0.82rem', outline: 'none', marginBottom: '14px' }
+
 function StatusDot({ status }) {
-  const colors = { connected: '#4A9C7A', warning: '#C9924A', error: '#C84B31', inactive: CHARCOAL }
+  const colors = { connected: '#4A9C7A', warning: '#C9924A', error: '#C84B31' }
   return <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: colors[status] || CHARCOAL, flexShrink: 0 }} />
 }
 
+function Modal({ title, onClose, children }) {
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
+      onClick={onClose}>
+      <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, padding: '32px', width: '480px', maxWidth: '90vw' }} onClick={e => e.stopPropagation()}>
+        <h3 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '1.4rem', color: CREAM, marginBottom: '24px', fontWeight: 300 }}>{title}</h3>
+        {children}
+      </div>
+    </div>
+  )
+}
+
 function UsersTab() {
-  const [users, setUsers] = useState(MOCK_USERS)
-  const [showModal, setShowModal] = useState(false)
+  const [users, setUsers]         = useState([])
+  const [roles, setRoles]         = useState([])
+  const [titles, setTitles]       = useState([])
+  const [loading, setLoading]     = useState(true)
+  const [showRoles, setShowRoles] = useState(false)
+  const [showAdd, setShowAdd]     = useState(false)
   const [selectedUser, setSelectedUser] = useState(null)
+  const [userRoles, setUserRoles] = useState([])
+  const [newUser, setNewUser]     = useState({ email: '', firstname: '', lastname: '' })
+  const [saving, setSaving]       = useState(false)
+  const [error, setError]         = useState(null)
+
+  useEffect(() => { loadAll() }, [])
+
+  async function loadAll() {
+    setLoading(true)
+    const [{ data: eu }, { data: ro }, { data: ti }] = await Promise.all([
+      supabase.from('endusers').select('*, contacts(firstname, lastname, primemailaddress)').eq('activestatus', 'A').order('createdate'),
+      supabase.from('roles').select('*').eq('active', true).order('rolename'),
+      supabase.from('productions').select('productionid, productiontitle').eq('productiongroup', 'TITLE').eq('activestatus', 'A'),
+    ])
+    if (eu) setUsers(eu)
+    if (ro) setRoles(ro)
+    if (ti) setTitles(ti)
+    setLoading(false)
+  }
+
+  async function openRoles(user) {
+    setSelectedUser(user)
+    const { data } = await supabase.from('endusers2roles')
+      .select('*, roles(rolename), productions(productiontitle)')
+      .eq('enduserid', user.enduserid)
+    setUserRoles(data || [])
+    setShowRoles(true)
+  }
+
+  async function handleDeactivate(user) {
+    if (!confirm(`Deactivate ${displayName(user)}?`)) return
+    await supabase.from('endusers').update({ activestatus: 'H', updatedate: new Date().toISOString() }).eq('enduserid', user.enduserid)
+    loadAll()
+  }
+
+  async function handleAddUser() {
+    if (!newUser.email || !newUser.firstname) { setError('Email and first name are required.'); return }
+    setSaving(true); setError(null)
+    try {
+      // Create contact first
+      const { data: contact, error: ce } = await supabase.from('contacts').insert({
+        firstname: newUser.firstname, lastname: newUser.lastname,
+        primemailaddress: newUser.email, activestatus: 'A',
+        createdate: new Date().toISOString(), updatedate: new Date().toISOString()
+      }).select().single()
+      if (ce) throw ce
+
+      // Create enduser
+      const { error: ee } = await supabase.from('endusers').insert({
+        contactid: contact.contactid, loginname: newUser.email,
+        emailaddress: newUser.email, activestatus: 'A',
+        createdate: new Date().toISOString(), updatedate: new Date().toISOString()
+      })
+      if (ee) throw ee
+
+      setShowAdd(false)
+      setNewUser({ email: '', firstname: '', lastname: '' })
+      loadAll()
+    } catch (err) {
+      setError(err.message)
+    }
+    setSaving(false)
+  }
+
+  function displayName(u) {
+    if (!u.contacts) return u.loginname || u.emailaddress
+    const c = u.contacts
+    return [c.firstname, c.lastname].filter(Boolean).join(' ') || u.loginname
+  }
+  function initials(u) {
+    return displayName(u).split(' ').map(x => x[0]).join('').toUpperCase().slice(0, 2)
+  }
 
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <div style={{ fontSize: '0.7rem', color: CHARCOAL, letterSpacing: '0.15em', textTransform: 'uppercase' }}>{users.length} Users</div>
-        <button style={{ background: GOLD, border: 'none', color: '#1A1810', padding: '8px 20px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontSize: '0.75rem', letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 500 }}>
+        <button onClick={() => { setShowAdd(true); setError(null) }}
+          style={{ background: GOLD, border: 'none', color: '#1A1810', padding: '8px 20px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontSize: '0.75rem', letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 500 }}>
           + New User
         </button>
       </div>
+
       <div style={{ border: `1px solid ${BORDER}` }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'DM Sans, sans-serif' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ borderBottom: `1px solid ${BORDER}`, background: SURFACE2 }}>
-              {['Name', 'Login', 'Roles', 'Status', 'MFA', 'Last Login', 'Actions'].map(h => (
+              {['Name','Login','Status','Last Updated','Actions'].map(h => (
                 <th key={h} style={{ padding: '11px 16px', textAlign: 'left', fontSize: '0.68rem', color: CHARCOAL, letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 400 }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {users.map((u, i) => (
-              <tr key={u.id} style={{ borderBottom: i < users.length - 1 ? `1px solid ${BORDER}` : 'none', opacity: u.status === 'H' ? 0.5 : 1 }}>
+            {loading ? (
+              <tr><td colSpan={5} style={{ padding: '32px', textAlign: 'center', color: MUTED, fontSize: '0.82rem' }}>Loading...</td></tr>
+            ) : users.map((u, i) => (
+              <tr key={u.enduserid} style={{ borderBottom: i < users.length - 1 ? `1px solid ${BORDER}` : 'none', opacity: u.activestatus === 'H' ? 0.5 : 1 }}>
                 <td style={{ padding: '13px 16px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <div style={{ width: '30px', height: '30px', borderRadius: '50%', background: 'rgba(201,146,74,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', color: GOLD, flexShrink: 0 }}>
-                      {u.name.split(' ').map(n => n[0]).join('')}
+                      {initials(u)}
                     </div>
-                    <span style={{ fontSize: '0.83rem', color: CREAM }}>{u.name}</span>
+                    <span style={{ fontSize: '0.83rem', color: CREAM }}>{displayName(u)}</span>
                   </div>
                 </td>
-                <td style={{ padding: '13px 16px', color: CHARCOAL, fontSize: '0.78rem' }}>{u.login}</td>
+                <td style={{ padding: '13px 16px', color: CHARCOAL, fontSize: '0.78rem' }}>{u.loginname || u.emailaddress}</td>
                 <td style={{ padding: '13px 16px' }}>
-                  <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                    {u.roles.map(r => (
-                      <span key={r} style={{ background: r === 'SysAdmin' ? 'rgba(201,146,74,0.15)' : 'rgba(255,255,255,0.06)', color: r === 'SysAdmin' ? GOLD : CHARCOAL, padding: '2px 8px', fontSize: '0.68rem', letterSpacing: '0.06em', borderRadius: '2px' }}>{r}</span>
-                    ))}
-                  </div>
+                  <span style={{ fontSize: '0.72rem', color: u.activestatus === 'A' ? '#4A9C7A' : CHARCOAL }}>{u.activestatus === 'A' ? 'Active' : 'Inactive'}</span>
                 </td>
-                <td style={{ padding: '13px 16px' }}>
-                  <span style={{ fontSize: '0.72rem', color: u.status === 'A' ? '#4A9C7A' : CHARCOAL }}>{u.status === 'A' ? 'Active' : 'Inactive'}</span>
+                <td style={{ padding: '13px 16px', color: MUTED, fontSize: '0.78rem' }}>
+                  {u.updatedate ? new Date(u.updatedate).toLocaleDateString() : '--'}
                 </td>
-                <td style={{ padding: '13px 16px' }}>
-                  <span style={{ fontSize: '0.72rem', color: u.mfa ? '#4A9C7A' : '#C84B31' }}>{u.mfa ? 'Enabled' : 'Disabled'}</span>
-                </td>
-                <td style={{ padding: '13px 16px', color: MUTED, fontSize: '0.78rem' }}>{u.lastLogin}</td>
                 <td style={{ padding: '13px 16px' }}>
                   <div style={{ display: 'flex', gap: '10px' }}>
-                    <button onClick={() => { setSelectedUser(u); setShowModal(true) }} style={{ background: 'none', border: 'none', color: GOLD, fontSize: '0.72rem', cursor: 'pointer', padding: 0 }}>Roles</button>
-                    <button style={{ background: 'none', border: 'none', color: CHARCOAL, fontSize: '0.72rem', cursor: 'pointer', padding: 0 }}>Edit</button>
-                    {u.status === 'A' && <button style={{ background: 'none', border: 'none', color: '#C84B31', fontSize: '0.72rem', cursor: 'pointer', padding: 0 }}>Deactivate</button>}
+                    <button onClick={() => openRoles(u)} style={{ background: 'none', border: 'none', color: GOLD, fontSize: '0.72rem', cursor: 'pointer', padding: 0 }}>Roles</button>
+                    {u.activestatus === 'A' && (
+                      <button onClick={() => handleDeactivate(u)} style={{ background: 'none', border: 'none', color: '#C84B31', fontSize: '0.72rem', cursor: 'pointer', padding: 0 }}>Deactivate</button>
+                    )}
                   </div>
                 </td>
               </tr>
@@ -135,95 +170,275 @@ function UsersTab() {
         </table>
       </div>
 
-      {showModal && selectedUser && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
-          onClick={() => setShowModal(false)}>
-          <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, padding: '32px', width: '480px', maxWidth: '90vw' }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '1.4rem', color: CREAM, marginBottom: '6px', fontWeight: 300 }}>Manage Roles</h3>
-            <div style={{ fontSize: '0.78rem', color: CHARCOAL, marginBottom: '24px' }}>{selectedUser.name}</div>
-            <div style={{ border: `1px solid ${BORDER}`, marginBottom: '16px' }}>
-              {['The Tunnels of Rasand'].map((title, i) => (
-                <div key={title} style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: i < 0 ? `1px solid ${BORDER}` : 'none' }}>
-                  <span style={{ fontSize: '0.82rem', color: CREAM }}>{title}</span>
-                  <select style={{ background: SURFACE2, border: `1px solid ${BORDER}`, color: CREAM, padding: '6px 10px', fontFamily: 'DM Sans, sans-serif', fontSize: '0.78rem', outline: 'none' }}>
-                    {MOCK_ROLES.map(r => <option key={r.id}>{r.name}</option>)}
+      {/* Add User Modal */}
+      {showAdd && (
+        <Modal title="New User" onClose={() => setShowAdd(false)}>
+          {error && <div style={{ background: 'rgba(200,75,49,0.1)', border: '1px solid rgba(200,75,49,0.3)', color: '#C84B31', padding: '10px 14px', fontSize: '0.78rem', marginBottom: '16px' }}>{error}</div>}
+          <label style={lbl}>First Name *</label>
+          <input value={newUser.firstname} onChange={e => setNewUser(u => ({...u, firstname: e.target.value}))} style={inp} placeholder="First name" />
+          <label style={lbl}>Last Name</label>
+          <input value={newUser.lastname} onChange={e => setNewUser(u => ({...u, lastname: e.target.value}))} style={inp} placeholder="Last name" />
+          <label style={lbl}>Email / Login *</label>
+          <input value={newUser.email} onChange={e => setNewUser(u => ({...u, email: e.target.value}))} style={inp} placeholder="email@example.com" />
+          <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
+            <button onClick={handleAddUser} disabled={saving}
+              style={{ background: GOLD, border: 'none', color: '#1A1810', padding: '9px 24px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontSize: '0.75rem', letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 500, opacity: saving ? 0.7 : 1 }}>
+              {saving ? 'Creating...' : 'Create User'}
+            </button>
+            <button onClick={() => setShowAdd(false)} style={{ background: 'none', border: `1px solid ${BORDER}`, color: CHARCOAL, padding: '9px 20px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontSize: '0.75rem' }}>Cancel</button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Roles Modal */}
+      {showRoles && selectedUser && (
+        <Modal title="Manage Roles" onClose={() => setShowRoles(false)}>
+          <div style={{ fontSize: '0.78rem', color: CHARCOAL, marginBottom: '20px', marginTop: '-16px' }}>{displayName(selectedUser)}</div>
+          <div style={{ border: `1px solid ${BORDER}`, marginBottom: '20px' }}>
+            {titles.length === 0 ? (
+              <div style={{ padding: '16px', color: MUTED, fontSize: '0.78rem', textAlign: 'center' }}>No titles available</div>
+            ) : titles.map((t, i) => {
+              const existing = userRoles.find(r => r.productionid === t.productionid)
+              return (
+                <div key={t.productionid} style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: i < titles.length - 1 ? `1px solid ${BORDER}` : 'none' }}>
+                  <span style={{ fontSize: '0.82rem', color: CREAM }}>{t.productiontitle}</span>
+                  <select defaultValue={existing?.roleid || ''}
+                    style={{ background: SURFACE2, border: `1px solid ${BORDER}`, color: CREAM, padding: '6px 10px', fontFamily: 'DM Sans, sans-serif', fontSize: '0.78rem', outline: 'none', cursor: 'pointer' }}>
+                    <option value="">No Access</option>
+                    {roles.map(r => <option key={r.roleid} value={r.roleid}>{r.rolename}</option>)}
                   </select>
                 </div>
-              ))}
-            </div>
-            <button style={{ background: 'none', border: `1px dashed rgba(201,146,74,0.3)`, color: GOLD, padding: '8px 16px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontSize: '0.72rem', letterSpacing: '0.08em', textTransform: 'uppercase', width: '100%', marginBottom: '20px' }}>
-              + Add Title Access
-            </button>
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button style={{ background: GOLD, border: 'none', color: '#1A1810', padding: '9px 24px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontSize: '0.75rem', letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 500 }}>Save</button>
-              <button onClick={() => setShowModal(false)} style={{ background: 'none', border: `1px solid ${BORDER}`, color: CHARCOAL, padding: '9px 20px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontSize: '0.75rem' }}>Cancel</button>
-            </div>
+              )
+            })}
           </div>
-        </div>
+          <button onClick={() => setShowRoles(false)}
+            style={{ background: GOLD, border: 'none', color: '#1A1810', padding: '9px 24px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontSize: '0.75rem', letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 500 }}>
+            Close
+          </button>
+        </Modal>
       )}
     </div>
   )
 }
 
 function NVPairTab() {
+  const [groups, setGroups]     = useState([])
   const [expanded, setExpanded] = useState(null)
-  const [pairs, setPairs] = useState(MOCK_NVPAIRS)
-  const [editingRow, setEditingRow] = useState(null)
+  const [pairs, setPairs]       = useState({})
+  const [loading, setLoading]   = useState(true)
+  const [editing, setEditing]   = useState(null)
+  const [adding, setAdding]     = useState(null)
+  const [newPair, setNewPair]   = useState({ nvname: '', nvvalue: '' })
 
-  function toggleGroup(group) { setExpanded(e => e === group ? null : group) }
+  useEffect(() => { loadGroups() }, [])
+
+  async function loadGroups() {
+    setLoading(true)
+    const { data } = await supabase.from('nvpair').select('nvgroup').eq('hidden', false)
+    if (data) {
+      const grouped = data.reduce((acc, r) => { acc[r.nvgroup] = (acc[r.nvgroup] || 0) + 1; return acc }, {})
+      setGroups(Object.entries(grouped).map(([group, count]) => ({ group, count })).sort((a,b) => a.group.localeCompare(b.group)))
+    }
+    setLoading(false)
+  }
+
+  async function loadPairs(group) {
+    const { data } = await supabase.from('nvpair').select('*').eq('nvgroup', group).eq('hidden', false).order('nvname')
+    if (data) setPairs(p => ({ ...p, [group]: data }))
+  }
+
+  async function toggleExpand(group) {
+    if (expanded === group) { setExpanded(null); return }
+    await loadPairs(group)
+    setExpanded(group)
+  }
+
+  async function handleToggleActive(pair) {
+    await supabase.from('nvpair').update({ active: !pair.active, updatedate: new Date().toISOString() }).eq('nvpairid', pair.nvpairid)
+    setPairs(p => ({ ...p, [pair.nvgroup]: p[pair.nvgroup].map(x => x.nvpairid === pair.nvpairid ? {...x, active: !x.active} : x) }))
+  }
+
+  async function handleSaveEdit(pair, newName, newValue) {
+    await supabase.from('nvpair').update({ nvname: newName, nvvalue: newValue, updatedate: new Date().toISOString() }).eq('nvpairid', pair.nvpairid)
+    setPairs(p => ({ ...p, [pair.nvgroup]: p[pair.nvgroup].map(x => x.nvpairid === pair.nvpairid ? {...x, nvname: newName, nvvalue: newValue} : x) }))
+    setEditing(null)
+  }
+
+  async function handleAddPair(group) {
+    if (!newPair.nvname || !newPair.nvvalue) return
+    const { data } = await supabase.from('nvpair').insert({
+      nvgroup: group, nvname: newPair.nvname, nvvalue: newPair.nvvalue,
+      active: true, hidden: false, createdate: new Date().toISOString(), updatedate: new Date().toISOString()
+    }).select().single()
+    if (data) {
+      setPairs(p => ({ ...p, [group]: [...(p[group] || []), data] }))
+      setGroups(g => g.map(x => x.group === group ? {...x, count: x.count + 1} : x))
+    }
+    setAdding(null)
+    setNewPair({ nvname: '', nvvalue: '' })
+  }
 
   return (
     <div>
       <div style={{ fontSize: '0.7rem', color: CHARCOAL, letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: '16px' }}>Picklist Groups</div>
-      <div style={{ border: `1px solid ${BORDER}` }}>
-        {MOCK_NVGROUPS.map((g, i) => (
-          <div key={g.group}>
-            <div onClick={() => toggleGroup(g.group)}
-              style={{ padding: '13px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', borderBottom: `1px solid ${BORDER}`, background: expanded === g.group ? 'rgba(201,146,74,0.04)' : 'transparent', transition: 'background 0.15s' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span style={{ color: MUTED, fontSize: '0.65rem', transition: 'transform 0.15s', display: 'inline-block', transform: expanded === g.group ? 'rotate(90deg)' : 'none' }}>▶</span>
-                <span style={{ fontSize: '0.85rem', color: CREAM }}>{g.group}</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+      {loading ? (
+        <div style={{ color: MUTED, fontSize: '0.82rem' }}>Loading...</div>
+      ) : (
+        <div style={{ border: `1px solid ${BORDER}` }}>
+          {groups.map((g, i) => (
+            <div key={g.group}>
+              <div onClick={() => toggleExpand(g.group)}
+                style={{ padding: '13px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', borderBottom: `1px solid ${BORDER}`, background: expanded === g.group ? 'rgba(201,146,74,0.04)' : 'transparent' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ color: MUTED, fontSize: '0.65rem', display: 'inline-block', transform: expanded === g.group ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>▶</span>
+                  <span style={{ fontSize: '0.85rem', color: CREAM }}>{g.group}</span>
+                </div>
                 <span style={{ fontSize: '0.72rem', color: CHARCOAL }}>{g.count} entries</span>
-                <span style={{ color: GOLD, fontSize: '0.72rem' }}>Edit</span>
               </div>
-            </div>
-            {expanded === g.group && pairs[g.group] && (
-              <div style={{ background: SURFACE2, borderBottom: `1px solid ${BORDER}` }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'DM Sans, sans-serif' }}>
-                  <thead>
-                    <tr style={{ borderBottom: `1px solid ${BORDER}` }}>
-                      {['NV Name', 'NV Value', 'Active', ''].map(h => (
-                        <th key={h} style={{ padding: '9px 16px', textAlign: 'left', fontSize: '0.65rem', color: CHARCOAL, letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 400 }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pairs[g.group].map((p, pi) => (
-                      <tr key={pi} style={{ borderBottom: pi < pairs[g.group].length - 1 ? `1px solid rgba(201,146,74,0.06)` : 'none', opacity: p.active ? 1 : 0.4 }}>
-                        <td style={{ padding: '9px 16px', color: CREAM, fontSize: '0.8rem' }}>{p.name}</td>
-                        <td style={{ padding: '9px 16px', color: CHARCOAL, fontSize: '0.78rem', fontFamily: 'monospace' }}>{p.value}</td>
-                        <td style={{ padding: '9px 16px' }}>
-                          <span style={{ fontSize: '0.7rem', color: p.active ? '#4A9C7A' : CHARCOAL }}>{p.active ? 'Active' : 'Hidden'}</span>
-                        </td>
-                        <td style={{ padding: '9px 16px' }}>
-                          <button style={{ background: 'none', border: 'none', color: GOLD, fontSize: '0.7rem', cursor: 'pointer', padding: 0 }}>Edit</button>
-                        </td>
+              {expanded === g.group && (
+                <div style={{ background: SURFACE2, borderBottom: i < groups.length - 1 ? `1px solid ${BORDER}` : 'none' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ borderBottom: `1px solid ${BORDER}` }}>
+                        {['NV Name','NV Value','Active',''].map(h => (
+                          <th key={h} style={{ padding: '9px 16px', textAlign: 'left', fontSize: '0.65rem', color: CHARCOAL, letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 400 }}>{h}</th>
+                        ))}
                       </tr>
-                    ))}
-                    <tr>
-                      <td colSpan={4} style={{ padding: '8px 16px' }}>
-                        <button style={{ background: 'none', border: 'none', color: GOLD, fontSize: '0.72rem', cursor: 'pointer', padding: 0, opacity: 0.7 }}>+ Add Entry</button>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {(pairs[g.group] || []).map((p, pi) => (
+                        <tr key={p.nvpairid} style={{ borderBottom: `1px solid rgba(201,146,74,0.06)`, opacity: p.active ? 1 : 0.45 }}>
+                          <td style={{ padding: '9px 16px' }}>
+                            {editing === p.nvpairid
+                              ? <input defaultValue={p.nvname} id={`name-${p.nvpairid}`} style={{ background: SURFACE, border: `1px solid ${BORDER}`, color: CREAM, padding: '4px 8px', fontFamily: 'DM Sans, sans-serif', fontSize: '0.78rem', outline: 'none', width: '140px' }} />
+                              : <span style={{ fontSize: '0.8rem', color: CREAM }}>{p.nvname}</span>}
+                          </td>
+                          <td style={{ padding: '9px 16px' }}>
+                            {editing === p.nvpairid
+                              ? <input defaultValue={p.nvvalue} id={`val-${p.nvpairid}`} style={{ background: SURFACE, border: `1px solid ${BORDER}`, color: CREAM, padding: '4px 8px', fontFamily: 'monospace', fontSize: '0.75rem', outline: 'none', width: '120px' }} />
+                              : <span style={{ fontSize: '0.78rem', color: CHARCOAL, fontFamily: 'monospace' }}>{p.nvvalue}</span>}
+                          </td>
+                          <td style={{ padding: '9px 16px' }}>
+                            <button onClick={() => handleToggleActive(p)} style={{ background: 'none', border: 'none', color: p.active ? '#4A9C7A' : CHARCOAL, fontSize: '0.7rem', cursor: 'pointer', padding: 0 }}>
+                              {p.active ? 'Active' : 'Hidden'}
+                            </button>
+                          </td>
+                          <td style={{ padding: '9px 16px' }}>
+                            {editing === p.nvpairid ? (
+                              <div style={{ display: 'flex', gap: '8px' }}>
+                                <button onClick={() => handleSaveEdit(p, document.getElementById(`name-${p.nvpairid}`).value, document.getElementById(`val-${p.nvpairid}`).value)}
+                                  style={{ background: 'none', border: 'none', color: GOLD, fontSize: '0.7rem', cursor: 'pointer', padding: 0 }}>Save</button>
+                                <button onClick={() => setEditing(null)} style={{ background: 'none', border: 'none', color: CHARCOAL, fontSize: '0.7rem', cursor: 'pointer', padding: 0 }}>Cancel</button>
+                              </div>
+                            ) : (
+                              <button onClick={() => setEditing(p.nvpairid)} style={{ background: 'none', border: 'none', color: GOLD, fontSize: '0.7rem', cursor: 'pointer', padding: 0 }}>Edit</button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                      {/* Add new row */}
+                      {adding === g.group ? (
+                        <tr style={{ background: 'rgba(201,146,74,0.04)' }}>
+                          <td style={{ padding: '9px 16px' }}>
+                            <input value={newPair.nvname} onChange={e => setNewPair(p => ({...p, nvname: e.target.value}))}
+                              placeholder="Display name" style={{ background: SURFACE, border: `1px solid ${BORDER}`, color: CREAM, padding: '4px 8px', fontFamily: 'DM Sans, sans-serif', fontSize: '0.78rem', outline: 'none', width: '140px' }} />
+                          </td>
+                          <td style={{ padding: '9px 16px' }}>
+                            <input value={newPair.nvvalue} onChange={e => setNewPair(p => ({...p, nvvalue: e.target.value}))}
+                              placeholder="value_key" style={{ background: SURFACE, border: `1px solid ${BORDER}`, color: CREAM, padding: '4px 8px', fontFamily: 'monospace', fontSize: '0.75rem', outline: 'none', width: '120px' }} />
+                          </td>
+                          <td style={{ padding: '9px 16px', color: '#4A9C7A', fontSize: '0.7rem' }}>Active</td>
+                          <td style={{ padding: '9px 16px' }}>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <button onClick={() => handleAddPair(g.group)} style={{ background: 'none', border: 'none', color: GOLD, fontSize: '0.7rem', cursor: 'pointer', padding: 0 }}>Add</button>
+                              <button onClick={() => { setAdding(null); setNewPair({ nvname: '', nvvalue: '' }) }} style={{ background: 'none', border: 'none', color: CHARCOAL, fontSize: '0.7rem', cursor: 'pointer', padding: 0 }}>Cancel</button>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : (
+                        <tr>
+                          <td colSpan={4} style={{ padding: '8px 16px' }}>
+                            <button onClick={() => setAdding(g.group)} style={{ background: 'none', border: 'none', color: GOLD, fontSize: '0.72rem', cursor: 'pointer', padding: 0, opacity: 0.7 }}>+ Add Entry</button>
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function RolesTab() {
+  const [roles, setRoles]     = useState([])
+  const [loading, setLoading] = useState(true)
+  const [showAdd, setShowAdd] = useState(false)
+  const [newRole, setNewRole] = useState({ rolename: '' })
+  const [saving, setSaving]   = useState(false)
+
+  useEffect(() => { loadRoles() }, [])
+
+  async function loadRoles() {
+    setLoading(true)
+    const { data } = await supabase.from('roles').select('*').order('rolename')
+    if (data) setRoles(data)
+    setLoading(false)
+  }
+
+  async function handleAddRole() {
+    if (!newRole.rolename.trim()) return
+    setSaving(true)
+    const { data } = await supabase.from('roles').insert({
+      rolename: newRole.rolename, active: true, hidden: false,
+      createdate: new Date().toISOString(), updatedate: new Date().toISOString()
+    }).select().single()
+    if (data) setRoles(r => [...r, data])
+    setShowAdd(false)
+    setNewRole({ rolename: '' })
+    setSaving(false)
+  }
+
+  return (
+    <div>
+      <div style={{ border: `1px solid ${BORDER}`, padding: '24px' }}>
+        {loading ? (
+          <div style={{ color: MUTED, fontSize: '0.82rem' }}>Loading...</div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '2px' }}>
+            {roles.map(r => (
+              <div key={r.roleid} style={{ background: SURFACE2, border: `1px solid ${BORDER}`, padding: '18px 20px' }}>
+                <div style={{ fontFamily: 'Cormorant Garamath, serif', fontSize: '1.05rem', color: CREAM, marginBottom: '6px' }}>{r.rolename}</div>
+                <div style={{ fontSize: '0.7rem', color: r.active ? '#4A9C7A' : CHARCOAL }}>{r.active ? 'Active' : 'Inactive'}</div>
               </div>
-            )}
+            ))}
+            <div onClick={() => setShowAdd(true)}
+              style={{ background: 'rgba(201,146,74,0.03)', border: `1px dashed rgba(201,146,74,0.2)`, padding: '18px 20px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: GOLD, fontSize: '0.75rem', letterSpacing: '0.08em' }}>
+              + New Role
+            </div>
           </div>
-        ))}
+        )}
       </div>
+
+      {showAdd && (
+        <Modal title="New Role" onClose={() => setShowAdd(false)}>
+          <label style={lbl}>Role Name *</label>
+          <input value={newRole.rolename} onChange={e => setNewRole({ rolename: e.target.value })}
+            onKeyDown={e => e.key === 'Enter' && handleAddRole()}
+            autoFocus style={inp} placeholder="e.g. Editor, Director" />
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button onClick={handleAddRole} disabled={saving}
+              style={{ background: GOLD, border: 'none', color: '#1A1810', padding: '9px 24px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontSize: '0.75rem', letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 500 }}>
+              {saving ? 'Creating...' : 'Create Role'}
+            </button>
+            <button onClick={() => setShowAdd(false)} style={{ background: 'none', border: `1px solid ${BORDER}`, color: CHARCOAL, padding: '9px 20px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontSize: '0.75rem' }}>Cancel</button>
+          </div>
+        </Modal>
+      )}
     </div>
   )
 }
@@ -244,31 +459,23 @@ function SystemTab() {
             </div>
           ))}
         </div>
-
         <div style={{ fontSize: '0.7rem', color: CHARCOAL, letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: '16px', marginTop: '28px' }}>Environment</div>
         <div style={{ display: 'flex', gap: '8px' }}>
-          {['Development', 'Staging', 'Production'].map(env => (
+          {['Development','Staging','Production'].map(env => (
             <div key={env} style={{ padding: '8px 16px', border: `1px solid ${env === 'Development' ? GOLD : BORDER}`, background: env === 'Development' ? 'rgba(201,146,74,0.08)' : 'transparent' }}>
-              <span style={{ fontSize: '0.75rem', color: env === 'Development' ? GOLD : CHARCOAL, letterSpacing: '0.08em' }}>{env}</span>
+              <span style={{ fontSize: '0.75rem', color: env === 'Development' ? GOLD : CHARCOAL }}>{env}</span>
               {env === 'Development' && <span style={{ marginLeft: '6px', fontSize: '0.65rem', color: GOLD }}>●</span>}
             </div>
           ))}
         </div>
       </div>
-
       <div>
         <div style={{ fontSize: '0.7rem', color: CHARCOAL, letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: '16px' }}>System Settings</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {[
-            { label: 'Default AI Model', value: 'Veo 2', type: 'select' },
-            { label: 'GCS Bucket', value: 'culmina-studio-production', type: 'text' },
-            { label: 'R2 Bucket', value: 'culmina-prod-r2', type: 'text' },
-            { label: 'Max Variations per Take', value: '5', type: 'number' },
-          ].map(({ label, value, type }) => (
+          {[['Default AI Model','Veo 2'],['GCS Bucket','culmina-studio-production'],['R2 Bucket','culmina-prod-r2'],['Max Variations per Take','5']].map(([label, value]) => (
             <div key={label}>
               <label style={{ display: 'block', fontSize: '0.68rem', color: CHARCOAL, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '6px' }}>{label}</label>
-              <input type={type} defaultValue={value}
-                style={{ width: '100%', background: SURFACE2, border: `1px solid ${BORDER}`, color: CREAM, padding: '9px 12px', fontFamily: 'DM Sans, sans-serif', fontSize: '0.82rem', outline: 'none' }} />
+              <input defaultValue={value} style={{ width: '100%', background: SURFACE2, border: `1px solid ${BORDER}`, color: CREAM, padding: '9px 12px', fontFamily: 'DM Sans, sans-serif', fontSize: '0.82rem', outline: 'none' }} />
             </div>
           ))}
           <button style={{ background: GOLD, border: 'none', color: '#1A1810', padding: '9px 24px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontSize: '0.75rem', letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 500, alignSelf: 'flex-start', marginTop: '8px' }}>
@@ -282,21 +489,18 @@ function SystemTab() {
 
 export default function Admin() {
   const [activeTab, setActiveTab] = useState('users')
-
   const tabs = [
-    { id: 'users',   label: 'Users' },
-    { id: 'roles',   label: 'Roles & Entitlements' },
-    { id: 'nvpair',  label: 'NVPair Editor' },
-    { id: 'system',  label: 'System Settings' },
+    { id: 'users',  label: 'Users' },
+    { id: 'roles',  label: 'Roles' },
+    { id: 'nvpair', label: 'NVPair Editor' },
+    { id: 'system', label: 'System Settings' },
   ]
-
   return (
     <div style={{ fontFamily: 'DM Sans, sans-serif', color: CREAM }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '32px' }}>
         <h1 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '2rem', fontWeight: 300, color: CREAM, margin: 0 }}>Admin</h1>
         <span style={{ background: 'rgba(201,146,74,0.15)', color: GOLD, padding: '4px 12px', fontSize: '0.68rem', letterSpacing: '0.1em', textTransform: 'uppercase', borderRadius: '2px' }}>SysAdmin</span>
       </div>
-
       <div style={{ display: 'flex', borderBottom: `1px solid ${BORDER}`, marginBottom: '28px' }}>
         {tabs.map(({ id, label }) => (
           <button key={id} onClick={() => setActiveTab(id)}
@@ -305,27 +509,8 @@ export default function Admin() {
           </button>
         ))}
       </div>
-
       {activeTab === 'users'  && <UsersTab />}
-      {activeTab === 'roles'  && (
-        <div style={{ border: `1px solid ${BORDER}`, padding: '24px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '2px' }}>
-            {MOCK_ROLES.map(r => (
-              <div key={r.id} style={{ background: SURFACE2, border: `1px solid ${BORDER}`, padding: '18px 20px' }}>
-                <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '1.05rem', color: CREAM, marginBottom: '6px' }}>{r.name}</div>
-                <div style={{ fontSize: '0.72rem', color: CHARCOAL, marginBottom: '12px' }}>{r.group}</div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: '0.7rem', color: r.active ? '#4A9C7A' : CHARCOAL }}>{r.active ? 'Active' : 'Inactive'}</span>
-                  <button style={{ background: 'none', border: 'none', color: GOLD, fontSize: '0.7rem', cursor: 'pointer', padding: 0 }}>Edit</button>
-                </div>
-              </div>
-            ))}
-            <div style={{ background: 'rgba(201,146,74,0.03)', border: `1px dashed rgba(201,146,74,0.2)`, padding: '18px 20px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: GOLD, fontSize: '0.75rem', letterSpacing: '0.08em' }}>
-              + New Role
-            </div>
-          </div>
-        </div>
-      )}
+      {activeTab === 'roles'  && <RolesTab />}
       {activeTab === 'nvpair' && <NVPairTab />}
       {activeTab === 'system' && <SystemTab />}
     </div>
