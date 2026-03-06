@@ -122,20 +122,61 @@ function ImageCreationPanel({ prompt, locked, isSound, onFinalSelected }) {
   const [model,      setModel]      = useState(modelList[0])
   const [variations, setVariations] = useState(isSound?1:3)
   const [generating, setGenerating] = useState(false)
-  const [drafts,     setDrafts]     = useState([])
+  const [drafts,     setDrafts]     = useState([])   // { id, dataUrl, b64 }
   const [finalIdx,   setFinalIdx]   = useState(null)
+  const [error,      setError]      = useState('')
   const sel = { width:'100%', background:SURFACE2, border:`1px solid ${BORDER}`, color:CREAM, padding:'8px 10px', fontFamily:'DM Sans, sans-serif', fontSize:'0.8rem', outline:'none', cursor:'pointer', boxSizing:'border-box' }
 
-  useEffect(()=>{ setModel(modelList[0]); setDrafts([]); setFinalIdx(null) },[isSound])
+  useEffect(()=>{ setModel(modelList[0]); setDrafts([]); setFinalIdx(null); setError('') },[isSound])
 
   async function handleCreate() {
-    setGenerating(true); setFinalIdx(null)
-    await new Promise(r=>setTimeout(r,1600))
-    setDrafts(Array.from({length:isSound?1:variations},(_,i)=>({ id:Date.now()+i, seed:Math.random() })))
+    setGenerating(true); setFinalIdx(null); setError('')
+    try {
+      if(!isSound && model==='Google ImageFX') {
+        const apiKey = import.meta.env.VITE_GOOGLE_IMAGEN_KEY
+        if(!apiKey) throw new Error('VITE_GOOGLE_IMAGEN_KEY not set in .env.local')
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${apiKey}`,
+          {
+            method:'POST',
+            headers:{ 'Content-Type':'application/json' },
+            body: JSON.stringify({
+              instances:[{ prompt: prompt||'Photorealistic character portrait. Cinematic lighting. 16:9 1080p.' }],
+              parameters:{ sampleCount: variations, aspectRatio:'16:9', safetyFilterLevel:'block_some' }
+            })
+          }
+        )
+        if(!res.ok) {
+          const err = await res.json().catch(()=>({}))
+          throw new Error(err?.error?.message || `API error ${res.status}`)
+        }
+        const json = await res.json()
+        const images = (json.predictions||[]).map((p,i)=>({
+          id: Date.now()+i,
+          dataUrl: `data:${p.mimeType||'image/png'};base64,${p.bytesBase64Encoded}`,
+          b64: p.bytesBase64Encoded,
+          mime: p.mimeType||'image/png'
+        }))
+        if(!images.length) throw new Error('No images returned — prompt may have been filtered')
+        setDrafts(images)
+      } else {
+        // Placeholder for other models (Midjourney, etc.) — stub until API keys added
+        await new Promise(r=>setTimeout(r,1400))
+        setDrafts(Array.from({length:isSound?1:variations},(_,i)=>({
+          id:Date.now()+i, dataUrl:null, b64:null, seed:Math.random()
+        })))
+      }
+    } catch(e) { setError(e.message) }
     setGenerating(false)
   }
-  function selectFinal(i) { setFinalIdx(i); onFinalSelected&&onFinalSelected(`draft_${drafts[i].id}`) }
-  function mockGradient(seed) { const h=Math.floor(seed*300+20); return `linear-gradient(135deg,hsl(${h},28%,7%) 0%,hsl(${h+40},22%,14%) 50%,hsl(${h},18%,7%) 100%)` }
+
+  function selectFinal(i) {
+    setFinalIdx(i)
+    // Pass back base64 data URL so it can be saved to instance.finalimage
+    onFinalSelected&&onFinalSelected(drafts[i].dataUrl||`stub_${drafts[i].id}`)
+  }
+
+  function mockGradient(seed) { const h=Math.floor((seed||0.5)*300+20); return `linear-gradient(135deg,hsl(${h},28%,7%) 0%,hsl(${h+40},22%,14%) 50%,hsl(${h},18%,7%) 100%)` }
 
   return (
     <div style={{ background:'rgba(201,146,74,0.03)', border:`1px solid rgba(201,146,74,0.1)`, padding:'16px', marginTop:'12px' }}>
@@ -162,16 +203,20 @@ function ImageCreationPanel({ prompt, locked, isSound, onFinalSelected }) {
         </button>
       )}
       {locked && <div style={{ fontSize:'0.72rem', color:CHARCOAL, fontStyle:'italic' }}>Asset is locked. Clone to create an editable copy.</div>}
+      {error && <div style={{ marginTop:'8px', padding:'8px 12px', background:'rgba(200,75,49,0.1)', border:'1px solid rgba(200,75,49,0.25)', color:RED, fontSize:'0.75rem', lineHeight:1.4 }}>⚠ {error}</div>}
       {!isSound && drafts.length>0 && (
         <div>
           <div style={{ fontSize:'0.68rem', color:CHARCOAL, letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:'10px' }}>Select Final Image</div>
           <div style={{ display:'grid', gridTemplateColumns:`repeat(${Math.min(drafts.length,3)},1fr)`, gap:'8px' }}>
             {drafts.map((d,i)=>(
               <div key={d.id}>
-                <div onClick={()=>selectFinal(i)} style={{ aspectRatio:'1', background:mockGradient(d.seed), border:`2px solid ${finalIdx===i?GOLD:BORDER}`, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', position:'relative', transition:'border-color 0.15s' }}>
-                  {finalIdx===i && <div style={{ position:'absolute', top:'6px', right:'6px', background:GOLD, color:'#1A1810', width:'18px', height:'18px', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'0.65rem', fontWeight:700 }}>✓</div>}
-                  <div style={{ opacity:0.15, fontSize:'1.8rem' }}>🎨</div>
-                  <div style={{ position:'absolute', bottom:'4px', left:'50%', transform:'translateX(-50%)', fontSize:'0.6rem', color:MUTED, whiteSpace:'nowrap' }}>Variation {i+1}</div>
+                <div onClick={()=>selectFinal(i)} style={{ aspectRatio:'1', background:d.dataUrl?'#000':mockGradient(d.seed), border:`2px solid ${finalIdx===i?GOLD:BORDER}`, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', position:'relative', transition:'border-color 0.15s', overflow:'hidden' }}>
+                  {d.dataUrl
+                    ? <img src={d.dataUrl} alt={`Variation ${i+1}`} style={{ width:'100%', height:'100%', objectFit:'cover', display:'block' }} />
+                    : <div style={{ opacity:0.15, fontSize:'1.8rem' }}>🎨</div>
+                  }
+                  {finalIdx===i && <div style={{ position:'absolute', top:'6px', right:'6px', background:GOLD, color:'#1A1810', width:'18px', height:'18px', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'0.65rem', fontWeight:700, zIndex:2 }}>✓</div>}
+                  {!d.dataUrl && <div style={{ position:'absolute', bottom:'4px', left:'50%', transform:'translateX(-50%)', fontSize:'0.6rem', color:MUTED, whiteSpace:'nowrap' }}>Variation {i+1}</div>}
                 </div>
                 <button onClick={()=>selectFinal(i)}
                   style={{ width:'100%', marginTop:'4px', background:finalIdx===i?'rgba(201,146,74,0.12)':'none', border:`1px solid ${finalIdx===i?'rgba(201,146,74,0.35)':BORDER}`, color:finalIdx===i?GOLD:CHARCOAL, padding:'5px 0', cursor:'pointer', fontSize:'0.63rem', letterSpacing:'0.08em', textTransform:'uppercase', fontFamily:'DM Sans, sans-serif' }}>
