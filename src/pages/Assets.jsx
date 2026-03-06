@@ -174,8 +174,7 @@ function ImageCreationPanel({ prompt, locked, isSound, onFinalSelected }) {
 
   function selectFinal(i) {
     setFinalIdx(i)
-    // Pass back base64 data URL so it can be saved to instance.finalimage
-    onFinalSelected&&onFinalSelected(drafts[i].dataUrl||`stub_${drafts[i].id}`)
+    onFinalSelected&&onFinalSelected(drafts[i].dataUrl||`stub_${drafts[i].id}`, true)
   }
 
   function mockGradient(seed) { const h=Math.floor((seed||0.5)*300+20); return `linear-gradient(135deg,hsl(${h},28%,7%) 0%,hsl(${h+40},22%,14%) 50%,hsl(${h},18%,7%) 100%)` }
@@ -239,7 +238,7 @@ function ImageCreationPanel({ prompt, locked, isSound, onFinalSelected }) {
   )
 }
 
-function InstanceForm({ data, onChange, assetMeta, locked }) {
+function InstanceForm({ data, onChange, assetMeta, locked, onSaveReminder }) {
   const { assettype } = assetMeta
   const inp = mkInp(locked); const sel = mkSel(locked); const txt = mkTxt(locked)
   const isChar   = assettype==='Character'
@@ -516,7 +515,7 @@ function InstanceForm({ data, onChange, assetMeta, locked }) {
         </button>
         <div style={lbl}>Prompt</div>
         <textarea {...f('prompt')} style={{...txt,minHeight:'100px',fontFamily:'monospace',fontSize:'0.75rem'}} placeholder="AI generation prompt..." />
-        <ImageCreationPanel prompt={data.prompt} locked={locked} isSound={isSound} onFinalSelected={url=>onChange('finalimage',url)} />
+        <ImageCreationPanel prompt={data.prompt} locked={locked} isSound={isSound} onFinalSelected={(url,remind)=>{ onChange('finalimage',url); remind&&onSaveReminder&&onSaveReminder() }} />
       </Section>
     </div>
   )
@@ -524,7 +523,8 @@ function InstanceForm({ data, onChange, assetMeta, locked }) {
 
 function AssetForm({ assetId, onClose, onSaved, onCloned }) {
   const { endUser } = useAuth()
-  const isNew = !assetId
+  const [savedAssetId, setSavedAssetId] = useState(assetId)
+  const isNew = !savedAssetId
   const [assetMeta, setAssetMeta] = useState({ name:'', assettype:'Character', domain:'User Domain', aigenerated:false, royaltyeligible:false, locked:false })
   const [instances, setInstances] = useState([{ _tempId:1, ...BLANK_INSTANCE }])
   const [activeKey, setActiveKey] = useState(1)
@@ -556,7 +556,7 @@ function AssetForm({ assetId, onClose, onSaved, onCloned }) {
     if(!assetMeta.name.trim()) { showToast('Asset name is required'); return }
     setSaving(true)
     try {
-      let aid = assetId
+      let aid = savedAssetId
       if(isNew) {
         const { data:a, error:ae } = await supabase.from('assets').insert({
           name:assetMeta.name, assetname:assetMeta.name, assettype:assetMeta.assettype, domain:assetMeta.domain,
@@ -598,6 +598,7 @@ function AssetForm({ assetId, onClose, onSaved, onCloned }) {
           await supabase.from('assetinstances').insert({...payload, createdate:new Date().toISOString()})
         }
       }
+      setSavedAssetId(aid)
       showToast('Saved ✓'); onSaved&&onSaved(aid)
     } catch(e) { showToast(`Error: ${e.message}`) }
     setSaving(false)
@@ -698,7 +699,7 @@ function AssetForm({ assetId, onClose, onSaved, onCloned }) {
       {/* Body */}
       <div style={{ flex:1, overflowY:'auto' }}>
         {activeInst&&(
-          <InstanceForm key={activeInst.instanceid||activeInst._tempId} data={activeInst} onChange={updateActiveInst} assetMeta={assetMetaPlus} locked={locked} />
+          <InstanceForm key={activeInst.instanceid||activeInst._tempId} data={activeInst} onChange={updateActiveInst} assetMeta={assetMetaPlus} locked={locked} onSaveReminder={()=>showToast('Image selected — hit Save to keep it ✓')} />
         )}
       </div>
     </div>
@@ -780,8 +781,11 @@ export default function Assets() {
                 onMouseEnter={e=>e.currentTarget.style.borderColor='rgba(201,146,74,0.35)'}
                 onMouseLeave={e=>e.currentTarget.style.borderColor=BORDER}
                 onClick={()=>openEdit(asset.assetid)}>
-                <div style={{ aspectRatio:'1', background:'linear-gradient(135deg,#111009 0%,#1a1208 100%)', display:'flex', alignItems:'center', justifyContent:'center', position:'relative' }}>
-                  <div style={{ fontSize:'2.5rem', opacity:0.2 }}>{iconFor(asset.assettype)}</div>
+                <div style={{ aspectRatio:'1', background:'linear-gradient(135deg,#111009 0%,#1a1208 100%)', display:'flex', alignItems:'center', justifyContent:'center', position:'relative', overflow:'hidden' }}>
+                  {asset.assetinstances?.[0]?.finalimage
+                    ? <img src={asset.assetinstances[0].finalimage} alt={asset.name} style={{ width:'100%', height:'100%', objectFit:'cover', display:'block' }} />
+                    : <div style={{ fontSize:'2.5rem', opacity:0.2 }}>{iconFor(asset.assettype)}</div>
+                  }
                   {asset.locked&&<div style={{ position:'absolute', top:'8px', left:'8px', background:'rgba(200,75,49,0.2)', color:RED, fontSize:'0.58rem', padding:'2px 6px' }}>🔒</div>}
                   {asset.aigenerated&&<div style={{ position:'absolute', top:'8px', right:'8px', background:'rgba(201,146,74,0.2)', color:GOLD, fontSize:'0.6rem', padding:'2px 6px' }}>AI</div>}
                   {instCount>1&&<div style={{ position:'absolute', bottom:'6px', right:'6px', background:'rgba(0,0,0,0.55)', color:CREAM, fontSize:'0.6rem', padding:'2px 7px' }}>{instCount}×</div>}
