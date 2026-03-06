@@ -559,7 +559,7 @@ function AssetForm({ assetId, onClose, onSaved, onCloned }) {
       let aid = assetId
       if(isNew) {
         const { data:a, error:ae } = await supabase.from('assets').insert({
-          name:assetMeta.name, assettype:assetMeta.assettype, domain:assetMeta.domain,
+          name:assetMeta.name, assetname:assetMeta.name, assettype:assetMeta.assettype, domain:assetMeta.domain,
           aigenerated:assetMeta.aigenerated, royaltyeligible:assetMeta.royaltyeligible,
           locked:false, activestatus:'A', createdate:new Date().toISOString(), updatedate:new Date().toISOString(),
           createdby:endUser?.enduserid
@@ -568,7 +568,7 @@ function AssetForm({ assetId, onClose, onSaved, onCloned }) {
         aid = a.assetid
       } else {
         await supabase.from('assets').update({
-          name:assetMeta.name, assettype:assetMeta.assettype, domain:assetMeta.domain,
+          name:assetMeta.name, assetname:assetMeta.name, assettype:assetMeta.assettype, domain:assetMeta.domain,
           aigenerated:assetMeta.aigenerated, royaltyeligible:assetMeta.royaltyeligible,
           updatedate:new Date().toISOString(), updatedby:endUser?.enduserid
         }).eq('assetid',aid)
@@ -606,7 +606,7 @@ function AssetForm({ assetId, onClose, onSaved, onCloned }) {
   async function handleClone() {
     setSaving(true)
     const { data:a } = await supabase.from('assets').insert({
-      name:`${assetMeta.name} (Copy)`, assettype:assetMeta.assettype, domain:assetMeta.domain,
+      name:`${assetMeta.name} (Copy)`, assetname:`${assetMeta.name} (Copy)`, assettype:assetMeta.assettype, domain:assetMeta.domain,
       aigenerated:assetMeta.aigenerated, royaltyeligible:assetMeta.royaltyeligible,
       locked:false, activestatus:'A', createdate:new Date().toISOString(), updatedate:new Date().toISOString(),
       createdby:endUser?.enduserid
