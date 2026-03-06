@@ -30,7 +30,7 @@ const TYPE_COLORS = {
   Other:            { bg:'rgba(92,87,78,0.2)',     color:MUTED },
 }
 const ASSET_TYPES = ['Character','Animal','Animate Object','Set','Prop','Sound','Other']
-const IMAGE_AI_MODELS = ['Google ImageFX','Google Wisk','Midjourney','DALL-E 3','Stable Diffusion','Flux']
+const IMAGE_AI_MODELS = ['Google Imagen 4','Google Imagen 4 Ultra','Google Imagen 4 Fast','Midjourney','DALL-E 3','Stable Diffusion','Flux']
 const AUDIO_AI_MODELS = ['ElevenLabs','Suno','Udio','Mubert','Adobe Podcast','Bark','MusicGen']
 
 const BLANK_INSTANCE = {
@@ -132,7 +132,9 @@ function ImageCreationPanel({ prompt, locked, isSound, onFinalSelected }) {
   async function handleCreate() {
     setGenerating(true); setFinalIdx(null); setError('')
     try {
-      if(!isSound && model==='Google ImageFX') {
+      const IMAGEN_MODELS = {'Google Imagen 4':'imagen-4.0-generate-001','Google Imagen 4 Ultra':'imagen-4.0-ultra-generate-001','Google Imagen 4 Fast':'imagen-4.0-fast-generate-001'}
+        const imagenModelId = IMAGEN_MODELS[model]
+        if(!isSound && imagenModelId) {
         const apiKey = import.meta.env.VITE_GOOGLE_IMAGEN_KEY
         if(!apiKey) throw new Error('VITE_GOOGLE_IMAGEN_KEY not set in .env.local')
         const res = await fetch(
