@@ -14,6 +14,7 @@ import Finances from './pages/Finances'
 import Admin from './pages/Admin'
 import Profile from './pages/Profile'
 import SevenStages from './pages/SevenStages'
+import SeriesManager from './pages/SeriesManager'
 import Lighting from './pages/Lighting'
 
 export default function App() {
@@ -38,6 +39,7 @@ export default function App() {
         <Route path="admin" element={<Admin />} />
         <Route path="profile" element={<Profile />} />
         <Route path="7stages" element={<SevenStages />} />
+        <Route path="series" element={<SeriesManager />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

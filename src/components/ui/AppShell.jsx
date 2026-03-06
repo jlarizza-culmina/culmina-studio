@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { path: 'post',         label: 'Post Production',   icon: '🎞️' },
   { path: 'distribution', label: 'Distribution',      icon: '📡' },
   { path: 'finances',     label: 'Finances',          icon: '💰' },
+  { path: 'series',       label: 'Series Manager',    icon: '🗂️' },
   { path: 'admin',        label: 'Admin',             icon: '⚙️' },
   { path: 'profile',      label: 'Profile',           icon: '👤' },
   { path: '7stages',      label: '7 Stages',          icon: '🎭' },
