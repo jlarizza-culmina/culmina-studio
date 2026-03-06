@@ -138,7 +138,7 @@ function ImageCreationPanel({ prompt, locked, isSound, onFinalSelected }) {
         const apiKey = import.meta.env.VITE_GOOGLE_IMAGEN_KEY
         if(!apiKey) throw new Error('VITE_GOOGLE_IMAGEN_KEY not set in .env.local')
         const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${apiKey}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/${imagenModelId}:predict?key=${apiKey}`,
           {
             method:'POST',
             headers:{ 'Content-Type':'application/json' },
