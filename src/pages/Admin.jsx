@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import ScoringModelsTab from '../components/ScoringModelsTab'
 
 const GOLD = '#C9924A'
 const CHARCOAL = '#5C574E'
@@ -492,9 +493,11 @@ export default function Admin() {
   const tabs = [
     { id: 'users',  label: 'Users' },
     { id: 'roles',  label: 'Roles' },
+    { id: 'scoring', label: 'Scoring Models' },
     { id: 'nvpair', label: 'NVPair Editor' },
     { id: 'system', label: 'System Settings' },
-  ]
+]
+
   return (
     <div style={{ fontFamily: 'DM Sans, sans-serif', color: CREAM }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '32px' }}>
@@ -513,6 +516,7 @@ export default function Admin() {
       {activeTab === 'roles'  && <RolesTab />}
       {activeTab === 'nvpair' && <NVPairTab />}
       {activeTab === 'system' && <SystemTab />}
+      {activeTab === 'scoring' && <ScoringModelsTab />}
     </div>
   )
 }
