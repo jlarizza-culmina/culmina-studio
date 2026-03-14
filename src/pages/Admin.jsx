@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import ScoringModelsTab from '../components/ScoringModelsTab'
+import DiscoverySourcesTab from '../components/DiscoverySourcesTab'
+
 
 const GOLD = '#C9924A'
 const CHARCOAL = '#5C574E'
@@ -496,6 +498,7 @@ export default function Admin() {
     { id: 'scoring', label: 'Scoring Models' },
     { id: 'nvpair', label: 'NVPair Editor' },
     { id: 'system', label: 'System Settings' },
+    { id: 'discovery', label: 'Discovery Sources' },
 ]
 
   return (
@@ -517,6 +520,7 @@ export default function Admin() {
       {activeTab === 'nvpair' && <NVPairTab />}
       {activeTab === 'system' && <SystemTab />}
       {activeTab === 'scoring' && <ScoringModelsTab />}
+      {activeTab === 'discovery' && <DiscoverySourcesTab />}
     </div>
   )
 }
