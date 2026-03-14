@@ -16,10 +16,12 @@ import Profile from './pages/Profile'
 import SevenStages from './pages/SevenStages'
 import SeriesManager from './pages/SeriesManager'
 import Lighting from './pages/Lighting'
+import Documents from './pages/Documents'
 
 export default function App() {
   return (
     <Routes>
+      <Route path="documents" element={<Documents />} />
       <Route path="/" element={<Home />} />
       <Route path="/login" element={<Login />} />
       <Route path="/lighting" element={<Lighting />} />
