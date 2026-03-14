@@ -477,7 +477,7 @@ function corsHeaders(origin: string): Headers {
   const headers = new Headers();
   headers.set("Access-Control-Allow-Origin", origin);
   headers.set("Access-Control-Allow-Methods", "GET, PUT, DELETE, POST, OPTIONS");
-  headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Culmina-Meta-*");
+  headers.set("Access-Control-Allow-Headers", "*");
   headers.set("Access-Control-Max-Age", "86400");
   headers.set("Access-Control-Expose-Headers", "Content-Length, Content-Range, ETag");
   return headers;
