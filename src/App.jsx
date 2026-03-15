@@ -21,10 +21,11 @@ import Documents from './pages/Documents'
 export default function App() {
   return (
     <Routes>
-      <Route path="documents" element={<Documents />} />
+      {/* Public */}
       <Route path="/" element={<Home />} />
       <Route path="/login" element={<Login />} />
-      <Route path="/lighting" element={<Lighting />} />
+
+      {/* Protected — wrapped in AppShell */}
       <Route path="/" element={
         <ProtectedRoute>
           <AppShell />
@@ -42,7 +43,11 @@ export default function App() {
         <Route path="profile" element={<Profile />} />
         <Route path="7stages" element={<SevenStages />} />
         <Route path="series" element={<SeriesManager />} />
+        <Route path="repository" element={<Documents />} />
+        <Route path="lighting" element={<Lighting />} />
       </Route>
+
+      {/* Fallback */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )
