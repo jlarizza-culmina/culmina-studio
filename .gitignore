@@ -26,3 +26,5 @@ scripts/gcs-credentials.json.env
 .env
 scripts/gcs-credentials.json
 *.zip
+.vercel
+.env*.local

@@ -34,6 +34,7 @@ const IMAGE_AI_MODELS = ['Google Imagen 4','Google Imagen 4 Ultra','Google Image
 const AUDIO_AI_MODELS = ['ElevenLabs','Suno','Udio','Mubert','Adobe Podcast','Bark','MusicGen']
 
 const BLANK_INSTANCE = {
+  voiceprompt: '',
   instancename:'Main', description:'', characterimportance:'Lead', speakingrole:false,
   sex:'', heightft:5, heightin:6, weightlbs:140, bodyshape:'', skintone:'', ethnicity:'',
   haircolor:'', hairlength:'', eyecolor:'',
@@ -511,11 +512,25 @@ function InstanceForm({ data, onChange, assetMeta, locked, onSaveReminder }) {
       <Section title="AI Prompt" defaultOpen={true}>
         <button onClick={autoGenPrompt} disabled={locked}
           style={{ background:locked?'rgba(255,255,255,0.03)':'rgba(201,146,74,0.1)', border:`1px solid rgba(201,146,74,0.25)`, color:locked?MUTED:GOLD, padding:'8px 16px', cursor:locked?'default':'pointer', fontFamily:'DM Sans, sans-serif', fontSize:'0.72rem', letterSpacing:'0.08em', textTransform:'uppercase', marginBottom:'10px' }}>
-          Auto-Generate Prompt
+          Generate Image Prompt
         </button>
         <div style={lbl}>Prompt</div>
         <textarea {...f('prompt')} style={{...txt,minHeight:'100px',fontFamily:'monospace',fontSize:'0.75rem'}} placeholder="AI generation prompt..." />
         <ImageCreationPanel prompt={data.prompt} locked={locked} isSound={isSound} onFinalSelected={(url,remind)=>{ onChange('finalimage',url); remind&&onSaveReminder&&onSaveReminder() }} />
+        <div style={lbl}>Voice Prompt</div>
+        <textarea {...f('voiceprompt')} style={{...txt,minHeight:'80px'}} placeholder="ElevenLabs voice direction: tone, accent, pace, emotional quality..." />
+        <button
+          disabled={locked}
+          onClick={async()=>{
+            if(locked) return
+            const res = await fetch('/api/score',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:300,messages:[{role:'user',content:`Generate ElevenLabs voice prompt for: ${data.instancename||'this character'}. Based on image prompt: ${(data.prompt||'').slice(0,300)}. Provide: tone, accent, speaking pace, emotional quality, style notes. 2-3 sentences, concise and actionable.`}]})})
+            const d = await res.json()
+            const text = d.content?.map(b=>b.text||'').join('') || ''
+            onChange('voiceprompt', text)
+          }}
+          style={{ background:'transparent', border:`1px solid rgba(201,146,74,0.25)`, color:locked?'#6A6560':'#C9924A', padding:'8px 16px', cursor:locked?'default':'pointer', fontFamily:'DM Sans, sans-serif', fontSize:'0.72rem', letterSpacing:'0.08em', textTransform:'uppercase', marginTop:'6px' }}>
+          Generate Voice Prompt
+        </button>
       </Section>
     </div>
   )
