@@ -445,13 +445,13 @@ function NodeDetailPanel({ node, onSave, onAddChild }) {
 
 // ── AI Generation helpers ─────────────────────────────────────
 
-async function callClaude(prompt) {
+async function callClaude(prompt, maxTokens = 4000) {
   const res = await fetch('/api/score', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 4000,
+      max_tokens: maxTokens,
       messages: [{ role: 'user', content: prompt }],
     }),
   })
@@ -949,9 +949,21 @@ export default function Development() {
         setBibleModal({ titleNode, parsed })
       } else if (action === 'assets') {
         const prompt = buildAssetsPrompt(titleNode)
-        const result = await callClaude(prompt)
+        const result = await callClaude(prompt, 8000)
         const clean = result.replace(/```json|```/g, '').trim()
-        const parsed = JSON.parse(clean)
+        let parsed
+        try {
+          parsed = JSON.parse(clean)
+        } catch (jsonErr) {
+          // Attempt to salvage truncated JSON by closing open structures
+          const salvage = clean
+            .replace(/,\s*$/, '')           // trailing comma
+            .replace(/"\s*$/, '"')           // unclosed string — close it
+          const chars = (salvage.match(/\[/g)||[]).length - (salvage.match(/\]/g)||[]).length
+          const braces = (salvage.match(/\{/g)||[]).length - (salvage.match(/\}/g)||[]).length
+          const repaired = salvage + ']'.repeat(Math.max(0,chars)) + '}'.repeat(Math.max(0,braces))
+          parsed = JSON.parse(repaired)
+        }
         setAssetsModal({ titleNode, parsed })
       } else {
         const prompt = buildProductionGuidePrompt(titleNode)
