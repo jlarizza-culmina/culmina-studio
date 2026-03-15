@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 
 // ── Brand tokens ───────────────────────────────────────────────
@@ -256,33 +256,89 @@ function TreeNode({ node, depth, selectedId, onSelect, expanded, onToggle, onAdd
   )
 }
 
-// Modal overlay for AI generation results
-function Modal({ title, content, onClose }) {
-  if (!content) return null
+// Modal overlay — supports text preview and Series Bible confirm modes
+function Modal({ title, content, onClose, biblePreview, onConfirmBible, bibleWriting }) {
+  if (!content && !biblePreview) return null
+
+  const isBible = !!biblePreview
+
   return (
     <div style={{
-      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)',
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.80)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       zIndex: 1000, padding: '20px',
     }}>
       <div style={{
         background: C.ghost, border: `1px solid ${C.borderHi}`,
-        borderRadius: '12px', width: '100%', maxWidth: '760px',
-        maxHeight: '80vh', display: 'flex', flexDirection: 'column',
+        borderRadius: '12px', width: '100%', maxWidth: '680px',
+        maxHeight: '82vh', display: 'flex', flexDirection: 'column',
         overflow: 'hidden',
       }}>
+        {/* Header */}
         <div style={{ padding: '18px 24px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '1.1rem', fontWeight: 600 }}>{title}</span>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: C.muted, fontSize: '1.2rem', cursor: 'pointer' }}>✕</button>
         </div>
+
+        {/* Body */}
         <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1 }}>
-          <pre style={{ whiteSpace: 'pre-wrap', fontFamily: "'DM Sans', sans-serif", fontSize: '0.82rem', color: C.cream, lineHeight: 1.7, margin: 0 }}>
-            {content}
-          </pre>
+          {isBible ? (
+            // Bible confirm view — show summary stats
+            <div>
+              <div style={{ marginBottom: '20px', padding: '14px 16px', background: 'rgba(201,146,74,0.06)', borderRadius: '8px', border: `1px solid ${C.border}` }}>
+                <div style={{ fontSize: '0.7rem', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '10px' }}>Will write to database</div>
+                {[
+                  { label: 'Title fields updated', val: '✓', color: C.gold },
+                  { label: 'Arcs',     val: biblePreview.arcs?.length || 0,     color: C.purple },
+                  { label: 'Acts',     val: biblePreview.arcs?.reduce((s, a) => s + (a.acts?.length || 0), 0) || 0, color: C.blue },
+                  { label: 'Episodes', val: biblePreview.arcs?.reduce((s, a) => s + (a.acts?.reduce((ss, act) => ss + (act.episodes?.length || 0), 0) || 0), 0) || 0, color: C.green },
+                ].map(({ label, val, color }) => (
+                  <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: `1px solid ${C.border}` }}>
+                    <span style={{ fontSize: '0.82rem', color: C.cream }}>{label}</span>
+                    <span style={{ fontSize: '0.82rem', fontWeight: 700, color }}>{val}</span>
+                  </div>
+                ))}
+              </div>
+              <div style={{ fontSize: '0.72rem', color: C.muted, lineHeight: 1.6 }}>
+                ⚠️ This will <strong style={{ color: C.cream }}>delete all existing</strong> Arcs, Acts, and Episodes under this title and replace them with the generated hierarchy. Title metadata fields will be overwritten.
+              </div>
+
+              {/* Arc preview */}
+              <div style={{ marginTop: '16px' }}>
+                <div style={{ fontSize: '0.68rem', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>Arc Preview</div>
+                {(biblePreview.arcs || []).map((arc, i) => (
+                  <div key={i} style={{ marginBottom: '8px', padding: '10px 12px', background: C.panel, borderRadius: '6px', border: `1px solid ${C.border}` }}>
+                    <div style={{ fontSize: '0.8rem', fontWeight: 600, color: C.purple, marginBottom: '2px' }}>◠ {arc.name}</div>
+                    <div style={{ fontSize: '0.72rem', color: C.muted }}>{arc.description?.slice(0, 120)}{arc.description?.length > 120 ? '…' : ''}</div>
+                    <div style={{ fontSize: '0.68rem', color: C.char, marginTop: '4px' }}>
+                      {arc.acts?.length || 0} acts · {arc.acts?.reduce((s, a) => s + (a.episodes?.length || 0), 0) || 0} episodes
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            // Plain text preview
+            <pre style={{ whiteSpace: 'pre-wrap', fontFamily: "'DM Sans', sans-serif", fontSize: '0.82rem', color: C.cream, lineHeight: 1.7, margin: 0 }}>
+              {content}
+            </pre>
+          )}
         </div>
+
+        {/* Footer */}
         <div style={{ padding: '14px 24px', borderTop: `1px solid ${C.border}`, display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-          <button style={S.btn('ghost')} onClick={() => navigator.clipboard?.writeText(content)}>Copy</button>
-          <button style={S.btn('primary')} onClick={onClose}>Close</button>
+          <button style={S.btn('ghost')} onClick={onClose} disabled={bibleWriting}>Cancel</button>
+          {isBible ? (
+            <button
+              style={{ ...S.btn('primary'), opacity: bibleWriting ? 0.6 : 1 }}
+              onClick={onConfirmBible}
+              disabled={bibleWriting}
+            >
+              {bibleWriting ? <><Spinner /> Writing…</> : '✓ Write to Database'}
+            </button>
+          ) : (
+            <button style={S.btn('ghost')} onClick={() => navigator.clipboard?.writeText(content)}>Copy</button>
+          )}
         </div>
       </div>
     </div>
@@ -403,72 +459,136 @@ async function callClaude(prompt) {
   return data.content?.map(b => b.text || '').join('') || ''
 }
 
-function buildAssetsPrompt(titleNode, allNodes) {
-  const desc = titleNode.description || titleNode.productionname
-  return `You are Culmina AI Drama Studio's Asset Generator. Given this production:
+function buildAssetsPrompt(titleNode) {
+  return `You are Culmina AI Drama Studio's Asset Generator. Return ONLY valid JSON — no markdown, no preamble, no backticks.
+
+Generate a complete asset list for this micro-drama series:
 
 TITLE: ${titleNode.productionname}
-DESCRIPTION: ${desc}
+DESCRIPTION: ${titleNode.description || '(infer from title)'}
+TONE: ${titleNode.tone || ''}
+SETTING: ${titleNode.settingdescription || ''}
 
-Generate a complete asset list for this micro-drama series. For each asset, provide:
+Return this exact JSON structure:
+{
+  "characters": [
+    {
+      "assetname": "Character full name",
+      "assettype": "Character",
+      "characterimportance": "Lead",
+      "speakingrole": true,
+      "sex": "Male",
+      "age": "late 20s",
+      "heightft": 6, "heightin": 1,
+      "weightlbs": 185,
+      "bodyshape": "Athletic",
+      "skintone": "Medium",
+      "ethnicity": "Caucasian",
+      "haircolor": "Dark brown",
+      "hairlength": "Short",
+      "eyecolor": "Green",
+      "scars": "Small scar above left eyebrow",
+      "tattoos": "None",
+      "piercings": "None",
+      "description": "2-3 sentence character description",
+      "instances": [
+        {
+          "instancename": "Hero Portrait",
+          "clothingdescription": "Detailed clothing for this instance",
+          "prompt": "Full detailed Imagen/Midjourney photorealistic cinematic portrait prompt 80+ words",
+          "voiceprompt": "ElevenLabs voice direction: tone, accent, pace, style, emotional quality"
+        }
+      ]
+    }
+  ],
+  "sets": [
+    {
+      "assetname": "Location name",
+      "assettype": "Set",
+      "description": "2 sentence set description",
+      "setdominantcolor": "#hex",
+      "setsecondarycolor": "#hex",
+      "setaccentcolor": "#hex",
+      "instances": [
+        {
+          "instancename": "Day Exterior",
+          "prompt": "Full detailed Imagen/Veo environment reference prompt 80+ words",
+          "voiceprompt": "Ambient audio description or sound design notes"
+        }
+      ]
+    }
+  ]
+}
 
-CHARACTERS (all named characters):
-- Asset Name: [Character Name]
-- Role: [Lead / Supporting / Antagonist]
-- Instances: [list 2-4 instance names, e.g. "Hero Portrait", "Action Pose", "Formal Attire"]
-- For each instance, write a detailed Imagen/Midjourney prompt
-- Physical Description: Age, build, hair, eyes, distinguishing features
-- Wardrobe per instance
-- No Tattoos / No Scars (or specify)
-- Voice Notes: Tone, accent, style for ElevenLabs
-
-SETS / ENVIRONMENTS:
-- Asset Name: [Location Name]
-- Environment Prompt: Detailed Imagen/Veo environment reference prompt
-- Aspect Ratio: 9:16 or 16:9
-- Lighting mood
-
-Format clearly with headers and dashes. Be specific and production-ready.`
+Requirements:
+- ALL named characters with 2-4 instances each
+- ALL key sets with 1-2 instances each
+- Every prompt must be 80+ words, photorealistic, cinematic
+- Return ONLY the JSON object, nothing else`
 }
 
 function buildSeriesBiblePrompt(titleNode) {
-  return `You are Culmina AI Drama Studio. Generate a Series Bible for this production:
+  return `You are Culmina AI Drama Studio's Series Bible Generator. Return ONLY valid JSON — no markdown, no preamble, no backticks.
+
+Generate a complete Series Bible for this micro-drama production targeting ReelShort and TikTok:
 
 TITLE: ${titleNode.productionname}
-DESCRIPTION: ${titleNode.description || ''}
+DESCRIPTION: ${titleNode.description || '(no description provided — infer from title)'}
 
-Produce a structured Series Bible with these sections:
+Return this exact JSON structure:
 
-## TITLE OVERVIEW
-- Overview (2-3 paragraphs)
-- Genre: (list 2-3 micro-drama genres)
-- Setting Description: (specific locations)
-- Time Period:
-- Tone: (e.g. "Suspenseful, romantic, witty — think Bridgerton meets Mission: Impossible")
-- Aspect Ratio: 9:16 Vertical
-- The Hook: (compelling 1-paragraph hook)
-- Central Conflict: (1-2 paragraphs)
-- Why It Works for Micro-Drama: (1 paragraph)
+{
+  "title": {
+    "overview": "2-3 paragraph series overview",
+    "genre": "e.g. Romantic Thriller, Fantasy Romance",
+    "settingdescription": "e.g. Paris, Dover, London, Calais",
+    "timeperiod": "e.g. September–October 1792",
+    "tone": "e.g. Suspenseful, romantic, witty. Think Bridgerton meets Mission: Impossible.",
+    "aspectratio": "9:16 Vertical",
+    "hook": "1 compelling paragraph hook",
+    "centralconflict": "1-2 paragraph central conflict",
+    "whymicrodrama": "1 paragraph on why it works for micro-drama"
+  },
+  "arcs": [
+    {
+      "name": "Arc name",
+      "description": "Arc description 2-3 sentences",
+      "sets": "Comma-separated key sets/locations",
+      "characters": "Comma-separated main characters and instances",
+      "props": "Comma-separated key props",
+      "acts": [
+        {
+          "actnumber": 1,
+          "name": "Act name",
+          "episoderange": "e.g. Eps 1–5",
+          "summary": "Act summary 2-3 sentences",
+          "sets": "Comma-separated sets",
+          "characters": "Comma-separated characters",
+          "props": "Comma-separated props",
+          "episodes": [
+            {
+              "episodenumber": 1,
+              "name": "Episode name",
+              "summary": "Episode summary 1-2 sentences",
+              "logline": "One-line logline",
+              "cliffhanger": "Episode cliffhanger",
+              "sets": "Comma-separated sets",
+              "characters": "Comma-separated characters",
+              "props": "Comma-separated props"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
 
-## ARC STRUCTURE
-For each story arc (2-4 arcs):
-- Arc Name & Description
-- Key Sets used in this arc
-- Main Characters/Instances featured
-- Key Props
-
-## ACT BREAKDOWN
-For each act (3-5 acts per arc):
-- Act Number & Name
-- Episodes covered (e.g. Eps 1-5)
-- Act Summary
-- Sets, Characters, Props
-
-## EPISODE LIST
-For each episode (aim for 50-70 episodes total):
-- Ep # | Episode Name | Logline | Cliffhanger
-
-Be specific, compelling, and production-ready for ReelShort/TikTok micro-drama format.`
+Requirements:
+- 2–4 Arcs total
+- 3–5 Acts per Arc
+- 50–70 Episodes total spread across all Acts
+- Be specific, dramatic, and production-ready for ReelShort/TikTok micro-drama format
+- Return ONLY the JSON object, nothing else`
 }
 
 function buildProductionGuidePrompt(titleNode) {
@@ -505,19 +625,247 @@ End with a VOICE GENERATION NOTES section for each character covering tone, styl
 Be highly specific and production-ready.`
 }
 
+// Assets confirm modal
+function AssetsConfirmModal({ titleNode, parsed, writing, onConfirm, onClose }) {
+  const chars = parsed.characters || []
+  const sets  = parsed.sets || []
+  const totalInstances = [...chars, ...sets].reduce((s, a) => s + (a.instances?.length || 0), 0)
+
+  return (
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.80)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000, padding:'20px' }}>
+      <div style={{ background:C.ghost, border:`1px solid ${C.borderHi}`, borderRadius:'12px', width:'100%', maxWidth:'620px', maxHeight:'80vh', display:'flex', flexDirection:'column', overflow:'hidden' }}>
+        <div style={{ padding:'18px 24px', borderBottom:`1px solid ${C.border}`, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+          <span style={{ fontFamily:"'Cormorant Garamond', serif", fontSize:'1.1rem', fontWeight:600 }}>Generate Assets — {titleNode.productionname}</span>
+          <button onClick={onClose} style={{ background:'none', border:'none', color:C.muted, fontSize:'1.2rem', cursor:'pointer' }}>✕</button>
+        </div>
+        <div style={{ padding:'20px 24px', overflowY:'auto', flex:1 }}>
+          <div style={{ marginBottom:'16px', padding:'14px 16px', background:'rgba(201,146,74,0.06)', borderRadius:'8px', border:`1px solid ${C.border}` }}>
+            <div style={{ fontSize:'0.7rem', color:C.muted, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:'10px' }}>Will write to assets table</div>
+            {[
+              { label:'Characters', val:chars.length,     color:C.gold },
+              { label:'Sets',       val:sets.length,      color:C.blue },
+              { label:'Instances',  val:totalInstances,   color:C.green },
+            ].map(({ label, val, color }) => (
+              <div key={label} style={{ display:'flex', justifyContent:'space-between', padding:'4px 0', borderBottom:`1px solid ${C.border}` }}>
+                <span style={{ fontSize:'0.82rem', color:C.cream }}>{label}</span>
+                <span style={{ fontSize:'0.82rem', fontWeight:700, color }}>{val}</span>
+              </div>
+            ))}
+          </div>
+
+          {chars.length > 0 && (
+            <div style={{ marginBottom:'12px' }}>
+              <div style={{ fontSize:'0.68rem', color:C.muted, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:'8px' }}>Characters</div>
+              {chars.map((c, i) => (
+                <div key={i} style={{ marginBottom:'6px', padding:'8px 12px', background:C.panel, borderRadius:'6px', border:`1px solid ${C.border}` }}>
+                  <div style={{ fontSize:'0.8rem', fontWeight:600, color:C.gold }}>{c.assetname}</div>
+                  <div style={{ fontSize:'0.7rem', color:C.muted }}>{c.characterimportance} · {c.instances?.length || 0} instances</div>
+                </div>
+              ))}
+            </div>
+          )}
+          {sets.length > 0 && (
+            <div>
+              <div style={{ fontSize:'0.68rem', color:C.muted, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:'8px' }}>Sets</div>
+              {sets.map((s, i) => (
+                <div key={i} style={{ marginBottom:'6px', padding:'8px 12px', background:C.panel, borderRadius:'6px', border:`1px solid ${C.border}` }}>
+                  <div style={{ fontSize:'0.8rem', fontWeight:600, color:C.blue }}>{s.assetname}</div>
+                  <div style={{ fontSize:'0.7rem', color:C.muted }}>{s.instances?.length || 0} instances</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div style={{ padding:'14px 24px', borderTop:`1px solid ${C.border}`, display:'flex', gap:'8px', justifyContent:'flex-end' }}>
+          <button style={S.btn('ghost')} onClick={onClose} disabled={writing}>Cancel</button>
+          <button style={{ ...S.btn('primary'), opacity:writing?0.6:1 }} onClick={onConfirm} disabled={writing}>
+            {writing ? <><Spinner /> Writing…</> : '✓ Write to Assets'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Write Assets to Supabase ──────────────────────────────────
+async function writeAssetsToDb(titleId, assetsJson) {
+  const allAssets = [
+    ...(assetsJson.characters || []),
+    ...(assetsJson.sets || []),
+  ]
+
+  for (const asset of allAssets) {
+    // Insert asset record
+    const { data: assetData, error: assetErr } = await supabase
+      .from('assets')
+      .insert([{
+        assetname:            asset.assetname,
+        assettype:            asset.assettype || 'Character',
+        titleproductionid:    titleId,
+        description:          asset.description || '',
+        characterimportance:  asset.characterimportance || null,
+        speakingrole:         asset.speakingrole || false,
+        sex:                  asset.sex || null,
+        haircolor:            asset.haircolor || null,
+        hairlength:           asset.hairlength || null,
+        eyecolor:             asset.eyecolor || null,
+        bodyshape:            asset.bodyshape || null,
+        skintone:             asset.skintone || null,
+        ethnicity:            asset.ethnicity || null,
+        scars:                asset.scars || null,
+        tattoos:              asset.tattoos || null,
+        piercings:            asset.piercings || null,
+        setdominantcolor:     asset.setdominantcolor || null,
+        setsecondarycolor:    asset.setsecondarycolor || null,
+        setaccentcolor:       asset.setaccentcolor || null,
+        aigenerated:          true,
+        activestatus:         'A',
+      }])
+      .select('assetid')
+      .single()
+    if (assetErr) throw new Error(`Asset insert failed (${asset.assetname}): ${assetErr.message}`)
+    const assetId = assetData.assetid
+
+    // Insert instances
+    let instSort = 1
+    for (const inst of (asset.instances || [])) {
+      const { error: instErr } = await supabase
+        .from('assetinstances')
+        .insert([{
+          assetid:              assetId,
+          instancename:         inst.instancename,
+          clothingdescription:  inst.clothingdescription || null,
+          prompt:               inst.prompt || null,
+          voiceprompt:          inst.voiceprompt || null,
+          activestatus:         'A',
+          sortorder:            instSort++,
+        }])
+      if (instErr) throw new Error(`Instance insert failed (${inst.instancename}): ${instErr.message}`)
+    }
+  }
+}
+
+// ── Write Series Bible to Supabase ───────────────────────────
+async function writeSeriesBible(titleId, bible) {
+  // 1. Update title fields
+  const { error: titleErr } = await supabase
+    .from('productions')
+    .update({
+      description:      bible.title.overview,
+      genre:            bible.title.genre,
+      settingdescription: bible.title.settingdescription,
+      timeperiod:       bible.title.timeperiod,
+      tone:             bible.title.tone,
+      aspectratio:      bible.title.aspectratio,
+      hook:             bible.title.hook,
+      centralconflict:  bible.title.centralconflict,
+      whymicrodrama:    bible.title.whymicrodrama,
+    })
+    .eq('productionid', titleId)
+  if (titleErr) throw new Error('Title update failed: ' + titleErr.message)
+
+  // 2. Delete all existing descendants (arcs, acts, episodes, shots, takes)
+  // Recursive delete via parentid chain — delete from leaves up
+  const deleteDescendants = async (parentId) => {
+    const { data: children } = await supabase
+      .from('productions')
+      .select('productionid')
+      .eq('parentid', parentId)
+    if (children && children.length > 0) {
+      for (const child of children) await deleteDescendants(child.productionid)
+      const ids = children.map(c => c.productionid)
+      await supabase.from('productions').delete().in('productionid', ids)
+    }
+  }
+  await deleteDescendants(titleId)
+
+  // 3. Insert arcs → acts → episodes
+  let arcSort = 0
+  for (const arc of (bible.arcs || [])) {
+    const { data: arcData, error: arcErr } = await supabase
+      .from('productions')
+      .insert([{
+        productionname:   arc.name,
+        productiongroup:  'ARC',
+        parentid:         titleId,
+        description:      arc.description,
+        sets:             arc.sets,
+        characters:       arc.characters,
+        props:            arc.props,
+        activestatus:     'A',
+        sortorder:        arcSort++,
+      }])
+      .select('productionid')
+      .single()
+    if (arcErr) throw new Error('Arc insert failed: ' + arcErr.message)
+    const arcId = arcData.productionid
+
+    let actSort = 0
+    for (const act of (arc.acts || [])) {
+      const { data: actData, error: actErr } = await supabase
+        .from('productions')
+        .insert([{
+          productionname:   act.name,
+          productiongroup:  'ACT',
+          parentid:         arcId,
+          actnumber:        act.actnumber,
+          episoderange:     act.episoderange,
+          description:      act.summary,
+          sets:             act.sets,
+          characters:       act.characters,
+          props:            act.props,
+          activestatus:     'A',
+          sortorder:        actSort++,
+        }])
+        .select('productionid')
+        .single()
+      if (actErr) throw new Error('Act insert failed: ' + actErr.message)
+      const actId = actData.productionid
+
+      let epSort = 0
+      for (const ep of (act.episodes || [])) {
+        const { error: epErr } = await supabase
+          .from('productions')
+          .insert([{
+            productionname:   ep.name,
+            productiongroup:  'EPISODE',
+            parentid:         actId,
+            episodenumber:    ep.episodenumber,
+            description:      ep.summary,
+            logline:          ep.logline,
+            cliffhanger:      ep.cliffhanger,
+            sets:             ep.sets,
+            characters:       ep.characters,
+            props:            ep.props,
+            activestatus:     'A',
+            sortorder:        epSort++,
+          }])
+        if (epErr) throw new Error('Episode insert failed: ' + epErr.message)
+        epSort++
+      }
+      actSort++
+    }
+    arcSort++
+  }
+}
+
 // ── Main Component ─────────────────────────────────────────────
 export default function Development() {
   const [allNodes,    setAllNodes]    = useState([])
   const [tree,        setTree]        = useState([])
   const [titles,      setTitles]      = useState([])
-  const [view,        setView]        = useState('grid')      // 'grid' | 'detail'
+  const [view,        setView]        = useState('grid')
   const [activeTitle, setActiveTitle] = useState(null)
   const [selectedNode,setSelectedNode]= useState(null)
   const [expanded,    setExpanded]    = useState({})
   const [loading,     setLoading]     = useState(true)
   const [saving,      setSaving]      = useState(false)
-  const [aiLoading,   setAiLoading]   = useState({})          // { titleId: 'assets'|'bible'|'guide' }
-  const [modal,       setModal]       = useState(null)        // { title, content }
+  const [aiLoading,   setAiLoading]   = useState({})
+  const [modal,       setModal]       = useState(null)
+  const [bibleModal,  setBibleModal]  = useState(null)
+  const [bibleWriting,setBibleWriting]= useState(false)
+  const [assetsModal, setAssetsModal] = useState(null)        // { titleNode, parsed }
+  const [assetsWriting,setAssetsWriting] = useState(false)
   const [error,       setError]       = useState(null)
 
   // Load productions
@@ -552,10 +900,11 @@ export default function Development() {
 
   const handleSave = async (formData) => {
     setSaving(true)
+    const { children: _c, _tempId, ...dbData } = formData
     const { error } = await supabase
       .from('productions')
-      .update(formData)
-      .eq('productionid', formData.productionid)
+      .update(dbData)
+      .eq('productionid', dbData.productionid)
     if (error) alert('Save failed: ' + error.message)
     setSaving(false)
   }
@@ -565,45 +914,87 @@ export default function Development() {
     if (!childType) return
     const name = prompt(`New ${childType} name:`)
     if (!name) return
-    const { data, error } = await supabase.from('productions').insert([{
+    const { error } = await supabase.from('productions').insert([{
       productionname: name,
       productiongroup: childType,
       parentid: parentNode.productionid,
       activestatus: 'A',
-    }]).select()
+    }])
     if (error) { alert('Error: ' + error.message); return }
-    // Reload
+    await reloadProductions()
+  }
+
+  // Reload helper
+  const reloadProductions = async () => {
     const { data: all } = await supabase.from('productions').select('*').order('sortorder', { ascending: true })
     setAllNodes(all || [])
     const t = buildTree(all || [])
     setTree(t)
     setTitles(flattenTitles(t))
+    // Refresh activeTitle node from new tree
+    if (activeTitle) {
+      const refreshed = (all || []).find(n => n.productionid === activeTitle.productionid)
+      if (refreshed) setActiveTitle(refreshed)
+    }
   }
 
-  // AI actions
   const runAI = async (titleNode, action) => {
     setAiLoading(l => ({ ...l, [titleNode.productionid]: action }))
     try {
-      let prompt, modalTitle
-      if (action === 'assets') {
-        prompt = buildAssetsPrompt(titleNode, allNodes)
-        modalTitle = `Assets — ${titleNode.productionname}`
-      } else if (action === 'bible') {
-        prompt = buildSeriesBiblePrompt(titleNode)
-        modalTitle = `Series Bible — ${titleNode.productionname}`
+      if (action === 'bible') {
+        const prompt = buildSeriesBiblePrompt(titleNode)
+        const result = await callClaude(prompt)
+        const clean = result.replace(/```json|```/g, '').trim()
+        const parsed = JSON.parse(clean)
+        setBibleModal({ titleNode, parsed })
+      } else if (action === 'assets') {
+        const prompt = buildAssetsPrompt(titleNode)
+        const result = await callClaude(prompt)
+        const clean = result.replace(/```json|```/g, '').trim()
+        const parsed = JSON.parse(clean)
+        setAssetsModal({ titleNode, parsed })
       } else {
-        prompt = buildProductionGuidePrompt(titleNode)
-        modalTitle = `AI Production Guide — ${titleNode.productionname}`
+        const prompt = buildProductionGuidePrompt(titleNode)
+        const modalTitle = `AI Production Guide — ${titleNode.productionname}`
+        const result = await callClaude(prompt)
+        setModal({ title: modalTitle, content: result })
       }
-      const result = await callClaude(prompt)
-      setModal({ title: modalTitle, content: result })
     } catch (e) {
       alert('AI generation failed: ' + e.message)
     }
     setAiLoading(l => { const n = { ...l }; delete n[titleNode.productionid]; return n })
   }
 
-  // Get subtree for active title
+  // Confirm Series Bible write
+  const handleConfirmBible = async () => {
+    if (!bibleModal) return
+    setBibleWriting(true)
+    try {
+      await writeSeriesBible(bibleModal.titleNode.productionid, bibleModal.parsed)
+      await reloadProductions()
+      setBibleModal(null)
+      // Auto-expand the title in detail view if we're there
+      if (activeTitle?.productionid === bibleModal.titleNode.productionid) {
+        setExpanded(e => ({ ...e, [activeTitle.productionid]: true }))
+      }
+    } catch (e) {
+      alert('Write failed: ' + e.message)
+    }
+    setBibleWriting(false)
+  }
+
+  // Confirm Assets write
+  const handleConfirmAssets = async () => {
+    if (!assetsModal) return
+    setAssetsWriting(true)
+    try {
+      await writeAssetsToDb(assetsModal.titleNode.productionid, assetsModal.parsed)
+      setAssetsModal(null)
+    } catch (e) {
+      alert('Assets write failed: ' + e.message)
+    }
+    setAssetsWriting(false)
+  }
   const activeSubtree = activeTitle
     ? tree.find(t => t.productionid === activeTitle.productionid)
     : null
@@ -646,13 +1037,11 @@ export default function Development() {
           <button style={S.btn('primary')} onClick={async () => {
             const name = prompt('New title name:')
             if (!name) return
-            const { data, error } = await supabase.from('productions').insert([{
+            const { error } = await supabase.from('productions').insert([{
               productionname: name, productiongroup: 'TITLE', activestatus: 'A',
-            }]).select()
+            }])
             if (error) { alert(error.message); return }
-            const { data: all } = await supabase.from('productions').select('*').order('sortorder')
-            const t = buildTree(all || [])
-            setTree(t); setTitles(flattenTitles(t))
+            await reloadProductions()
           }}>+ New Title</button>
         )}
         {view === 'detail' && activeTitle && (
@@ -739,8 +1128,30 @@ export default function Development() {
         </div>
       )}
 
-      {/* Modal */}
+      {/* Text result Modal */}
       {modal && <Modal title={modal.title} content={modal.content} onClose={() => setModal(null)} />}
+
+      {/* Series Bible confirm Modal */}
+      {bibleModal && (
+        <Modal
+          title={`Series Bible — ${bibleModal.titleNode.productionname}`}
+          biblePreview={bibleModal.parsed}
+          onClose={() => { if (!bibleWriting) setBibleModal(null) }}
+          onConfirmBible={handleConfirmBible}
+          bibleWriting={bibleWriting}
+        />
+      )}
+
+      {/* Assets confirm Modal */}
+      {assetsModal && (
+        <AssetsConfirmModal
+          titleNode={assetsModal.titleNode}
+          parsed={assetsModal.parsed}
+          writing={assetsWriting}
+          onConfirm={handleConfirmAssets}
+          onClose={() => { if (!assetsWriting) setAssetsModal(null) }}
+        />
+      )}
     </div>
   )
 }
