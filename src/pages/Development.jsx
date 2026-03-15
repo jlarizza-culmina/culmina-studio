@@ -89,8 +89,8 @@ function buildTree(flat) {
   flat.forEach(n => { map[n.productionid] = { ...n, children: [] } })
   const roots = []
   flat.forEach(n => {
-    if (n.parentid && map[n.parentid]) map[n.parentid].children.push(map[n.productionid])
-    else if (!n.parentid) roots.push(map[n.productionid])
+    if (n.parentproductionid && map[n.parentproductionid]) map[n.parentproductionid].children.push(map[n.productionid])
+    else if (!n.parentproductionid) roots.push(map[n.productionid])
   })
   return roots
 }
@@ -138,12 +138,12 @@ function TitleCard({ node, onOpen, onGenerateAssets, onSeriesBible, onProduction
               style={{ fontSize: '1rem', fontWeight: 700, color: C.cream, cursor: 'pointer', fontFamily: "'Cormorant Garamond', serif' ", letterSpacing: '0.01em' }}
               onClick={() => onOpen(node)}
             >
-              {node.productionname || node.title || 'Untitled'}
+              {node.productiontitle || node.title || 'Untitled'}
             </span>
           </div>
           <div style={{ fontSize: '0.72rem', color: C.muted }}>
             {node.activestatus === 'A' ? '● Active' : '○ Inactive'}
-            {node.productionstage && <span style={{ marginLeft: '10px' }}>{node.productionstage}</span>}
+            {node.productionstatus && <span style={{ marginLeft: '10px' }}>{node.productionstatus}</span>}
           </div>
         </div>
         <button
@@ -244,7 +244,7 @@ function TreeNode({ node, depth, selectedId, onSelect, expanded, onToggle, onAdd
         >{hasChildren ? '▶' : ''}</span>
         <span style={{ fontSize: '0.7rem', color, flexShrink: 0 }}>{LEVEL_ICONS[node.productiongroup]}</span>
         <span style={{ fontSize: '0.78rem', color: isSelected ? C.gold : C.cream, fontWeight: isSelected ? 600 : 400 }}>
-          {node.productionname || node.title || 'Untitled'}
+          {node.productiontitle || node.title || 'Untitled'}
         </span>
       </div>
       {isExpanded && hasChildren && node.children.map(ch => (
@@ -405,8 +405,8 @@ function NodeDetailPanel({ node, onSave, onAddChild }) {
         )}
       </div>
 
-      {field('productionname', 'Name')}
-      {field('description', 'Description', { textarea: true, rows: 3 })}
+      {field('productiontitle', 'Name')}
+      {field('synopsis', 'Description', { textarea: true, rows: 3 })}
 
       {node.productiongroup === 'TITLE' && <>
         {field('aspectratio', 'Aspect Ratio', { select: true, options: ['9:16 Vertical', '16:9 Horizontal', '1:1 Square', '4:5'] })}
@@ -430,10 +430,10 @@ function NodeDetailPanel({ node, onSave, onAddChild }) {
       </>}
 
       {(node.productiongroup === 'ARC' || node.productiongroup === 'ACT') && <>
-        {field('summary', 'Summary', { textarea: true, rows: 4 })}
+        {field('synopsis', 'Summary', { textarea: true, rows: 4 })}
       </>}
 
-      {field('productionstage', 'Stage', { select: true, options: ['Development', 'Pre-Production', 'Production', 'Post-Production', 'Distribution', 'Complete'] })}
+      {field('productionstatus', 'Stage', { select: true, options: ['Development', 'Pre-Production', 'Production', 'Post-Production', 'Distribution', 'Complete'] })}
       {field('activestatus', 'Status', { select: true, options: ['A', 'I', 'H'] })}
 
       <div style={{ display: 'flex', gap: '8px', marginTop: '20px', paddingTop: '16px', borderTop: `1px solid ${C.border}` }}>
@@ -464,7 +464,7 @@ function buildAssetsPrompt(titleNode) {
 
 Generate a complete asset list for this micro-drama series:
 
-TITLE: ${titleNode.productionname}
+TITLE: ${titleNode.productiontitle}
 DESCRIPTION: ${titleNode.description || '(infer from title)'}
 TONE: ${titleNode.tone || ''}
 SETTING: ${titleNode.settingdescription || ''}
@@ -532,7 +532,7 @@ function buildSeriesBiblePrompt(titleNode) {
 
 Generate a complete Series Bible for this micro-drama production targeting ReelShort and TikTok:
 
-TITLE: ${titleNode.productionname}
+TITLE: ${titleNode.productiontitle}
 DESCRIPTION: ${titleNode.description || '(no description provided — infer from title)'}
 
 Return this exact JSON structure:
@@ -594,7 +594,7 @@ Requirements:
 function buildProductionGuidePrompt(titleNode) {
   return `You are Culmina AI Drama Studio's Production Guide Generator. Create an AI Production Guide for:
 
-TITLE: ${titleNode.productionname}
+TITLE: ${titleNode.productiontitle}
 DESCRIPTION: ${titleNode.description || ''}
 
 Generate Episodes 1-5 in full detail:
@@ -635,7 +635,7 @@ function AssetsConfirmModal({ titleNode, parsed, writing, onConfirm, onClose }) 
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.80)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000, padding:'20px' }}>
       <div style={{ background:C.ghost, border:`1px solid ${C.borderHi}`, borderRadius:'12px', width:'100%', maxWidth:'620px', maxHeight:'80vh', display:'flex', flexDirection:'column', overflow:'hidden' }}>
         <div style={{ padding:'18px 24px', borderBottom:`1px solid ${C.border}`, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-          <span style={{ fontFamily:"'Cormorant Garamond', serif", fontSize:'1.1rem', fontWeight:600 }}>Generate Assets — {titleNode.productionname}</span>
+          <span style={{ fontFamily:"'Cormorant Garamond', serif", fontSize:'1.1rem', fontWeight:600 }}>Generate Assets — {titleNode.productiontitle}</span>
           <button onClick={onClose} style={{ background:'none', border:'none', color:C.muted, fontSize:'1.2rem', cursor:'pointer' }}>✕</button>
         </div>
         <div style={{ padding:'20px 24px', overflowY:'auto', flex:1 }}>
@@ -751,7 +751,7 @@ async function writeSeriesBible(titleId, bible) {
   const { error: titleErr } = await supabase
     .from('productions')
     .update({
-      description:      bible.title.overview,
+      synopsis: bible.title.overview,
       genre:            bible.title.genre,
       settingdescription: bible.title.settingdescription,
       timeperiod:       bible.title.timeperiod,
@@ -770,7 +770,7 @@ async function writeSeriesBible(titleId, bible) {
     const { data: children } = await supabase
       .from('productions')
       .select('productionid')
-      .eq('parentid', parentId)
+      .eq('parentproductionid', parentId)
     if (children && children.length > 0) {
       for (const child of children) await deleteDescendants(child.productionid)
       const ids = children.map(c => c.productionid)
@@ -785,10 +785,10 @@ async function writeSeriesBible(titleId, bible) {
     const { data: arcData, error: arcErr } = await supabase
       .from('productions')
       .insert([{
-        productionname:   arc.name,
+        productiontitle:   arc.name,
         productiongroup:  'ARC',
-        parentid:         titleId,
-        description:      arc.description,
+        parentproductionid:         titleId,
+        synopsis:      arc.description,
         sets:             arc.sets,
         characters:       arc.characters,
         props:            arc.props,
@@ -805,12 +805,12 @@ async function writeSeriesBible(titleId, bible) {
       const { data: actData, error: actErr } = await supabase
         .from('productions')
         .insert([{
-          productionname:   act.name,
+          productiontitle:   act.name,
           productiongroup:  'ACT',
-          parentid:         arcId,
+          parentproductionid:         arcId,
           actnumber:        act.actnumber,
           episoderange:     act.episoderange,
-          description:      act.summary,
+          synopsis:      act.summary,
           sets:             act.sets,
           characters:       act.characters,
           props:            act.props,
@@ -827,11 +827,11 @@ async function writeSeriesBible(titleId, bible) {
         const { error: epErr } = await supabase
           .from('productions')
           .insert([{
-            productionname:   ep.name,
+            productiontitle:   ep.name,
             productiongroup:  'EPISODE',
-            parentid:         actId,
+            parentproductionid:         actId,
             episodenumber:    ep.episodenumber,
-            description:      ep.summary,
+            synopsis:      ep.summary,
             logline:          ep.logline,
             cliffhanger:      ep.cliffhanger,
             sets:             ep.sets,
@@ -915,9 +915,9 @@ export default function Development() {
     const name = prompt(`New ${childType} name:`)
     if (!name) return
     const { error } = await supabase.from('productions').insert([{
-      productionname: name,
+      productiontitle: name,
       productiongroup: childType,
-      parentid: parentNode.productionid,
+      parentproductionid: parentNode.productionid,
       activestatus: 'A',
     }])
     if (error) { alert('Error: ' + error.message); return }
@@ -955,7 +955,7 @@ export default function Development() {
         setAssetsModal({ titleNode, parsed })
       } else {
         const prompt = buildProductionGuidePrompt(titleNode)
-        const modalTitle = `AI Production Guide — ${titleNode.productionname}`
+        const modalTitle = `AI Production Guide — ${titleNode.productiontitle}`
         const result = await callClaude(prompt)
         setModal({ title: modalTitle, content: result })
       }
@@ -1025,7 +1025,7 @@ export default function Development() {
             >← All Titles</button>
           )}
           <h1 style={S.headerTitle}>
-            {view === 'grid' ? 'Development' : (activeTitle?.productionname || 'Development')}
+            {view === 'grid' ? 'Development' : (activeTitle?.productiontitle || 'Development')}
           </h1>
           <div style={S.headerSub}>
             {view === 'grid'
@@ -1038,7 +1038,7 @@ export default function Development() {
             const name = prompt('New title name:')
             if (!name) return
             const { error } = await supabase.from('productions').insert([{
-              productionname: name, productiongroup: 'TITLE', activestatus: 'A',
+              productiontitle: name, productiongroup: 'TITLE', activestatus: 'A',
             }])
             if (error) { alert(error.message); return }
             await reloadProductions()
@@ -1134,7 +1134,7 @@ export default function Development() {
       {/* Series Bible confirm Modal */}
       {bibleModal && (
         <Modal
-          title={`Series Bible — ${bibleModal.titleNode.productionname}`}
+          title={`Series Bible — ${bibleModal.titleNode.productiontitle}`}
           biblePreview={bibleModal.parsed}
           onClose={() => { if (!bibleWriting) setBibleModal(null) }}
           onConfirmBible={handleConfirmBible}
