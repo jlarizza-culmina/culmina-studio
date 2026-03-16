@@ -647,21 +647,40 @@ const ASSET_TYPE_ICONS = {
 const CHARACTER_TYPES = ['Person', 'Animal', 'AnimateObject']
 
 function AssetTree({ titleId, onOpenAsset }) {
-  const [assets,   setAssets]   = useState([])
-  const [loading,  setLoading]  = useState(true)
-  const [expanded, setExpanded] = useState({ Characters: true })
+  const [assets,    setAssets]    = useState([])
+  const [instances, setInstances] = useState({})   // { assetid: [inst, ...] }
+  const [loading,   setLoading]   = useState(true)
+  const [expanded,  setExpanded]  = useState({ Characters: true })
 
   useEffect(() => {
     if (!titleId) return
     const load = async () => {
       setLoading(true)
-      const { data } = await supabase
+      const { data: assetData } = await supabase
         .from('assets')
         .select('assetid, assetname, name, assettype, characterimportance, activestatus')
         .eq('titleproductionid', titleId)
         .eq('activestatus', 'A')
         .order('assetname')
-      setAssets(data || [])
+      const assets = assetData || []
+      setAssets(assets)
+
+      // Fetch all instances for these assets in one query
+      if (assets.length > 0) {
+        const ids = assets.map(a => a.assetid)
+        const { data: instData } = await supabase
+          .from('assetinstances')
+          .select('instanceid, assetid, instancename, activestatus')
+          .in('assetid', ids)
+          .eq('activestatus', 'A')
+          .order('sortorder')
+        const byAsset = {}
+        for (const inst of (instData || [])) {
+          if (!byAsset[inst.assetid]) byAsset[inst.assetid] = []
+          byAsset[inst.assetid].push(inst)
+        }
+        setInstances(byAsset)
+      }
       setLoading(false)
     }
     load()
@@ -669,7 +688,23 @@ function AssetTree({ titleId, onOpenAsset }) {
 
   const toggle = (key) => setExpanded(e => ({ ...e, [key]: !e[key] }))
 
-  // Group assets into top-level buckets
+  const chevron = (isOpen) => (
+    <span style={{ fontSize: '0.5rem', color: C.muted, width: '8px', flexShrink: 0,
+      transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', display: 'inline-block' }}>▶</span>
+  )
+
+  const rowStyle = (depth) => ({
+    display: 'flex', alignItems: 'center', gap: '5px',
+    padding: `4px 8px 4px ${8 + depth * 12}px`,
+    cursor: 'pointer', userSelect: 'none',
+  })
+
+  const hoverHandlers = {
+    onMouseEnter: e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)',
+    onMouseLeave: e => e.currentTarget.style.background = 'transparent',
+  }
+
+  // Group assets
   const isChar = a => CHARACTER_TYPES.includes(a.assettype)
   const characters = assets.filter(isChar)
   const sets       = assets.filter(a => a.assettype === 'Set')
@@ -677,7 +712,6 @@ function AssetTree({ titleId, onOpenAsset }) {
   const sound      = assets.filter(a => a.assettype === 'Sound')
   const other      = assets.filter(a => !isChar(a) && !['Set','Prop','Sound'].includes(a.assettype))
 
-  // Group characters by importance then by type
   const charsByImportance = {}
   for (const imp of IMPORTANCE_ORDER) {
     const byImp = characters.filter(a => (a.characterimportance || 'Supporting') === imp)
@@ -693,18 +727,52 @@ function AssetTree({ titleId, onOpenAsset }) {
   if (loading) return <div style={{ padding: '12px 14px', fontSize: '0.72rem', color: C.muted }}>Loading assets…</div>
   if (assets.length === 0) return <div style={{ padding: '12px 14px', fontSize: '0.72rem', color: C.muted }}>No assets yet</div>
 
-  const Section = ({ label, icon, count, colorKey, children }) => {
+  // Asset node with expandable instances underneath
+  const AssetNode = ({ asset, depth = 0 }) => {
+    const key = `asset_${asset.assetid}`
+    const isOpen = expanded[key]
+    const insts = instances[asset.assetid] || []
+    const hasInsts = insts.length > 0
+    const label = asset.assetname || asset.name || 'Unnamed'
+
+    return (
+      <div>
+        <div
+          onClick={() => { if (hasInsts) toggle(key); else onOpenAsset(asset.assetid) }}
+          style={rowStyle(depth)}
+          {...hoverHandlers}
+        >
+          {hasInsts ? chevron(isOpen) : <span style={{ width: '8px', flexShrink: 0 }} />}
+          <span style={{ fontSize: '0.65rem', color: C.gold, flexShrink: 0 }}>◈</span>
+          <span
+            style={{ fontSize: '0.75rem', color: C.cream, flex: 1 }}
+            onClick={e => { e.stopPropagation(); onOpenAsset(asset.assetid) }}
+          >{label}</span>
+          {hasInsts && <span style={{ fontSize: '0.6rem', color: C.muted }}>{insts.length}</span>}
+        </div>
+        {isOpen && hasInsts && insts.map(inst => (
+          <div
+            key={inst.instanceid}
+            onClick={() => onOpenAsset(asset.assetid)}
+            style={rowStyle(depth + 1)}
+            {...hoverHandlers}
+          >
+            <span style={{ width: '8px', flexShrink: 0 }} />
+            <span style={{ fontSize: '0.6rem', color: C.muted, flexShrink: 0 }}>▸</span>
+            <span style={{ fontSize: '0.72rem', color: C.muted }}>{inst.instancename || 'Instance'}</span>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  const Section = ({ label, icon, count, children }) => {
     const key = label
     const isOpen = expanded[key]
     return (
       <div>
-        <div
-          onClick={() => toggle(key)}
-          style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '5px 14px', cursor: 'pointer', userSelect: 'none' }}
-          onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
-          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-        >
-          <span style={{ fontSize: '0.55rem', color: C.muted, width: '10px', transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', display: 'inline-block' }}>▶</span>
+        <div onClick={() => toggle(key)} style={rowStyle(0)} {...hoverHandlers}>
+          {chevron(isOpen)}
           <span style={{ fontSize: '0.72rem' }}>{icon}</span>
           <span style={{ fontSize: '0.75rem', color: C.cream, fontWeight: 600, flex: 1 }}>{label}</span>
           <span style={{ fontSize: '0.65rem', color: C.muted }}>{count}</span>
@@ -716,19 +784,14 @@ function AssetTree({ titleId, onOpenAsset }) {
 
   const ImportanceGroup = ({ importance, typeMap }) => {
     const key = `imp_${importance}`
-    const isOpen = expanded[key] !== false  // default open
+    const isOpen = expanded[key] !== false
     const color = IMPORTANCE_COLORS[importance] || C.muted
     const total = Object.values(typeMap).reduce((s, a) => s + a.length, 0)
     return (
-      <div style={{ paddingLeft: '14px' }}>
-        <div
-          onClick={() => toggle(key)}
-          style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 8px', cursor: 'pointer', userSelect: 'none' }}
-          onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
-          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-        >
-          <span style={{ fontSize: '0.5rem', color: C.muted, width: '8px', transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', display: 'inline-block' }}>▶</span>
-          <span style={{ fontSize: '0.68rem', color, fontWeight: 700, flex: 1, letterSpacing: '0.06em', textTransform: 'uppercase' }}>{importance}</span>
+      <div>
+        <div onClick={() => toggle(key)} style={rowStyle(1)} {...hoverHandlers}>
+          {chevron(isOpen)}
+          <span style={{ fontSize: '0.68rem', color, fontWeight: 700, flex: 1, letterSpacing: '0.05em', textTransform: 'uppercase' }}>{importance}</span>
           <span style={{ fontSize: '0.62rem', color: C.muted }}>{total}</span>
         </div>
         {isOpen && Object.entries(typeMap).map(([type, items]) => (
@@ -742,38 +805,21 @@ function AssetTree({ titleId, onOpenAsset }) {
     const key = `type_${type}`
     const isOpen = expanded[key] !== false
     return (
-      <div style={{ paddingLeft: '14px' }}>
-        <div
-          onClick={() => toggle(key)}
-          style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '3px 8px', cursor: 'pointer', userSelect: 'none' }}
-          onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
-          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-        >
-          <span style={{ fontSize: '0.5rem', color: C.muted, width: '8px', transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', display: 'inline-block' }}>▶</span>
+      <div>
+        <div onClick={() => toggle(key)} style={rowStyle(2)} {...hoverHandlers}>
+          {chevron(isOpen)}
           <span style={{ fontSize: '0.65rem' }}>{ASSET_TYPE_ICONS[type]}</span>
           <span style={{ fontSize: '0.7rem', color: C.muted, flex: 1 }}>{type}</span>
           <span style={{ fontSize: '0.6rem', color: C.muted }}>{items.length}</span>
         </div>
-        {isOpen && items.map(a => <AssetLeaf key={a.assetid} asset={a} />)}
+        {isOpen && items.map(a => <AssetNode key={a.assetid} asset={a} depth={3} />)}
       </div>
     )
   }
 
-  const FlatGroup = ({ items }) => (
-    <div style={{ paddingLeft: '14px' }}>
-      {items.map(a => <AssetLeaf key={a.assetid} asset={a} />)}
-    </div>
-  )
-
-  const AssetLeaf = ({ asset }) => (
-    <div
-      onClick={() => onOpenAsset(asset.assetid)}
-      style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '4px 8px 4px 22px', cursor: 'pointer', userSelect: 'none' }}
-      onMouseEnter={e => { e.currentTarget.style.background = 'rgba(201,146,74,0.08)'; e.currentTarget.style.color = C.gold }}
-      onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '' }}
-    >
-      <span style={{ fontSize: '0.65rem', color: C.muted }}>◈</span>
-      <span style={{ fontSize: '0.75rem', color: C.cream }}>{asset.assetname || asset.name || 'Unnamed'}</span>
+  const FlatSection = ({ items, depth = 1 }) => (
+    <div>
+      {items.map(a => <AssetNode key={a.assetid} asset={a} depth={depth} />)}
     </div>
   )
 
@@ -788,22 +834,22 @@ function AssetTree({ titleId, onOpenAsset }) {
       )}
       {sets.length > 0 && (
         <Section label="Sets" icon="🏛" count={sets.length}>
-          <FlatGroup items={sets} />
+          <FlatSection items={sets} />
         </Section>
       )}
       {props.length > 0 && (
         <Section label="Props" icon="📦" count={props.length}>
-          <FlatGroup items={props} />
+          <FlatSection items={props} />
         </Section>
       )}
       {sound.length > 0 && (
         <Section label="Sound" icon="🎵" count={sound.length}>
-          <FlatGroup items={sound} />
+          <FlatSection items={sound} />
         </Section>
       )}
       {other.length > 0 && (
         <Section label="Other" icon="◈" count={other.length}>
-          <FlatGroup items={other} />
+          <FlatSection items={other} />
         </Section>
       )}
     </div>

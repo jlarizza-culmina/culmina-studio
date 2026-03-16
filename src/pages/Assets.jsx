@@ -729,7 +729,7 @@ export default function Assets() {
   useEffect(() => {
     const assetid = searchParams.get('assetid')
     if (assetid) {
-      setDrawerAssetId(Number(assetid))
+      setOpenAssetId(Number(assetid)); setShowForm(true)
       setSearchParams({}, { replace: true })  // clean URL
     }
   }, [])
@@ -740,6 +740,17 @@ const [viewMode,     setViewMode]     = useState('grid')
   const [loading,      setLoading]      = useState(true)
   const [openAssetId,  setOpenAssetId]  = useState(null)
   const [showForm,     setShowForm]     = useState(false)
+  // Auto-open asset from URL param (navigated from Development module)
+  const [searchParams, setSearchParams] = useSearchParams()
+  useEffect(() => {
+    const assetid = searchParams.get('assetid')
+    if (assetid) {
+      setOpenAssetId(Number(assetid))
+      setShowForm(true)
+      setSearchParams({}, { replace: true })
+    }
+  }, [])
+
 
   useEffect(()=>{ loadAssets() },[])
 
