@@ -19,7 +19,8 @@ const NAV_ITEMS = [
 
 const RESOURCE_ITEMS = [
   { path: '7stages',  label: '7 Stages',  icon: '🎭' },
-  { path: 'lighting', label: 'Lighting',  icon: '💡' },
+  { path: 'lighting',         label: 'Lighting',          icon: '💡' },
+  { path: 'camera-movements', label: 'Camera Movements', icon: '🎥' },
 ]
 
 export function AppShell() {
