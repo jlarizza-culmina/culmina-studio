@@ -1242,6 +1242,104 @@ function AssetTree({ titleId, onOpenAsset }) {
   )
 }
 
+// ── Production Guide Episode Range Modal ─────────────────────
+function GuideModal({ titleNode, existingEpisodes, existingShots, writing, progress, onConfirm, onClose }) {
+  const totalEps = existingEpisodes.length || 10
+  const [useAll,   setUseAll]   = useState(false)
+  const [epStart,  setEpStart]  = useState(1)
+  const [epEnd,    setEpEnd]    = useState(Math.min(5, totalEps || 5))
+
+  const count    = useAll ? (totalEps || 10) : Math.max(1, (epEnd || 1) - (epStart || 1) + 1)
+  const tokens   = count * 1800   // ~1800 tokens per episode
+  const costUSD  = (tokens / 1000000 * 3.0).toFixed(3)  // Sonnet input rate
+
+  const inputStyle = {
+    background: '#2A2820', border: '1px solid rgba(201,146,74,0.2)',
+    color: '#F7F2E8', padding: '6px 10px', borderRadius: '5px',
+    fontSize: '0.82rem', width: '70px', textAlign: 'center',
+    fontFamily: 'DM Sans, sans-serif',
+  }
+
+  return (
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.82)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000, padding:'20px' }}>
+      <div style={{ background:C.ghost, border:`1px solid ${C.borderHi}`, borderRadius:'12px', width:'100%', maxWidth:'480px', overflow:'hidden' }}>
+        {/* Header */}
+        <div style={{ padding:'18px 24px', borderBottom:`1px solid ${C.border}`, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+          <span style={{ fontFamily:"'Cormorant Garamond', serif", fontSize:'1.1rem', fontWeight:600, color:C.cream }}>AI Production Guide</span>
+          <button onClick={onClose} style={{ background:'none', border:'none', color:C.muted, fontSize:'1.2rem', cursor:'pointer' }}>✕</button>
+        </div>
+
+        <div style={{ padding:'20px 24px' }}>
+          {/* Title */}
+          <div style={{ fontSize:'0.85rem', color:C.cream, fontWeight:600, marginBottom:'4px' }}>{titleNode.productiontitle}</div>
+          <div style={{ fontSize:'0.72rem', color:C.muted, marginBottom:'20px' }}>
+            {totalEps} episodes in Series Bible · {existingShots} existing shots
+          </div>
+
+          {/* Warning if shots exist */}
+          {existingShots > 0 && (
+            <div style={{ background:'rgba(200,122,74,0.1)', border:'1px solid rgba(200,122,74,0.3)', borderRadius:'6px', padding:'10px 14px', marginBottom:'16px', fontSize:'0.75rem', color:'#C87A4A' }}>
+              ⚠️ {existingShots} existing shots will be deleted and replaced for the selected episode range.
+            </div>
+          )}
+
+          {/* Episode range */}
+          <div style={{ marginBottom:'20px' }}>
+            <div style={{ fontSize:'0.68rem', color:C.muted, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:'10px' }}>Episode Range</div>
+            <label style={{ display:'flex', alignItems:'center', gap:'8px', marginBottom:'12px', cursor:'pointer' }}>
+              <input type="checkbox" checked={useAll} onChange={e => setUseAll(e.target.checked)}
+                style={{ accentColor: C.gold, width:'14px', height:'14px' }} />
+              <span style={{ fontSize:'0.82rem', color:C.cream }}>All episodes ({totalEps || '?'})</span>
+            </label>
+            {!useAll && (
+              <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
+                <span style={{ fontSize:'0.78rem', color:C.muted }}>From</span>
+                <input type="number" min={1} max={totalEps || 999} value={epStart}
+                  onChange={e => setEpStart(Number(e.target.value))} style={inputStyle} />
+                <span style={{ fontSize:'0.78rem', color:C.muted }}>to</span>
+                <input type="number" min={epStart} max={totalEps || 999} value={epEnd}
+                  onChange={e => setEpEnd(Number(e.target.value))} style={inputStyle} />
+              </div>
+            )}
+          </div>
+
+          {/* Token estimate */}
+          <div style={{ background:C.panel, border:`1px solid ${C.border}`, borderRadius:'8px', padding:'12px 14px', marginBottom:'20px' }}>
+            <div style={{ fontSize:'0.68rem', color:C.muted, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:'8px' }}>Estimated Cost</div>
+            {[
+              { label:'Episodes',      val:count,                          color:C.gold },
+              { label:'Shots',         val:`~${count * 7}`,               color:C.cream },
+              { label:'Est. tokens',   val:tokens.toLocaleString(),        color:C.cream },
+              { label:'Est. cost',     val:`~$${costUSD}`,                 color:C.green },
+            ].map(({ label, val, color }) => (
+              <div key={label} style={{ display:'flex', justifyContent:'space-between', padding:'3px 0', borderBottom:`1px solid ${C.border}` }}>
+                <span style={{ fontSize:'0.78rem', color:C.muted }}>{label}</span>
+                <span style={{ fontSize:'0.78rem', fontWeight:600, color }}>{val}</span>
+              </div>
+            ))}
+          </div>
+
+          {progress && (
+            <div style={{ fontSize:'0.75rem', color:C.gold, marginBottom:'12px', textAlign:'center' }}>{progress}</div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding:'14px 24px', borderTop:`1px solid ${C.border}`, display:'flex', gap:'8px', justifyContent:'flex-end' }}>
+          <button style={S.btn('ghost')} onClick={onClose} disabled={writing}>Cancel</button>
+          <button
+            style={{ ...S.btn('primary'), opacity: writing ? 0.6 : 1 }}
+            onClick={() => onConfirm(useAll ? 1 : epStart, useAll ? (totalEps || 999) : epEnd, existingEpisodes)}
+            disabled={writing}
+          >
+            {writing ? <><Spinner /> Writing…</> : `✦ Generate ${count} Episode${count !== 1 ? 's' : ''}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // Assets confirm modal
 function AssetsConfirmModal({ titleNode, parsed, writing, onConfirm, onClose }) {
   const chars = parsed.characters || []
@@ -1381,6 +1479,110 @@ async function writeAssetsToDb(titleId, assetsJson) {
   }
 }
 
+// ── Write Production Guide to Supabase ──────────────────────
+async function writeProductionGuide(titleId, guideJson, existingEpisodes, onProgress) {
+  // Find the first Act under this title to attach episodes to
+  // Walk: title -> arc -> act
+  const { data: arcs } = await supabase
+    .from('productions')
+    .select('productionid, productiontitle')
+    .eq('parentproductionid', titleId)
+    .eq('productiongroup', 'ARC')
+    .eq('activestatus', 'A')
+    .order('sortorder')
+
+  let actId = null
+
+  if (arcs && arcs.length > 0) {
+    const { data: acts } = await supabase
+      .from('productions')
+      .select('productionid')
+      .eq('parentproductionid', arcs[0].productionid)
+      .eq('productiongroup', 'ACT')
+      .eq('activestatus', 'A')
+      .order('sortorder')
+    if (acts && acts.length > 0) actId = acts[0].productionid
+  }
+
+  // If no hierarchy, attach directly to title
+  const parentId = actId || titleId
+
+  let epCount = 0
+  for (const ep of (guideJson.episodes || [])) {
+    epCount++
+    if (onProgress) onProgress(`Writing Episode ${ep.episodenumber}… (${epCount}/${guideJson.episodes.length})`)
+
+    // Check if episode already exists (match by episode number)
+    const existing = existingEpisodes.find(e => e.episodenumber === ep.episodenumber)
+
+    let epId
+    if (existing) {
+      // Update existing episode
+      await supabase.from('productions').update({
+        productiontitle: ep.name,
+        synopsis:        ep.synopsis,
+        targetruntime:   ep.targetruntime || 75,
+        updatedate:      new Date().toISOString(),
+      }).eq('productionid', existing.productionid)
+      epId = existing.productionid
+
+      // Delete existing shots for this episode
+      const { data: existingShots } = await supabase
+        .from('productions')
+        .select('productionid')
+        .eq('parentproductionid', epId)
+        .eq('productiongroup', 'SHOT')
+      if (existingShots?.length) {
+        await supabase.from('productions').delete()
+          .in('productionid', existingShots.map(s => s.productionid))
+      }
+    } else {
+      // Insert new episode
+      const { data: epData, error: epErr } = await supabase
+        .from('productions')
+        .insert([{
+          productiontitle:  ep.name,
+          productiongroup:  'EPISODE',
+          parentproductionid: parentId,
+          episodenumber:    ep.episodenumber,
+          synopsis:         ep.synopsis,
+          targetruntime:    ep.targetruntime || 75,
+          activestatus:     'A',
+          sortorder:        ep.episodenumber,
+        }])
+        .select('productionid')
+        .single()
+      if (epErr) throw new Error(`Episode insert failed: ${epErr.message}`)
+      epId = epData.productionid
+    }
+
+    // Insert shots
+    let shotSort = 1
+    for (const shot of (ep.shots || [])) {
+      const { error: shotErr } = await supabase
+        .from('productions')
+        .insert([{
+          productiontitle:    shot.name,
+          productiongroup:    'SHOT',
+          parentproductionid: epId,
+          shotlength:         shot.shotlength || 8,
+          cameraangle:        shot.cameraangle || null,
+          cameramovement:     shot.cameramovement || null,
+          subjectaction:      shot.subjectaction || null,
+          lighting:           shot.lighting || null,
+          script:             shot.script || null,
+          prompt:             shot.prompt || null,
+          aigeneratedprompt:  shot.prompt || null,
+          aigeneratedpromptdate: shot.prompt ? new Date().toISOString() : null,
+          notes:              shot.notes || null,
+          activestatus:       'A',
+          sortorder:          shotSort++,
+        }])
+      if (shotErr) throw new Error(`Shot insert failed: ${shotErr.message}`)
+    }
+  }
+}
+
 // ── Write Series Bible to Supabase ───────────────────────────
 async function writeSeriesBible(titleId, bible) {
   // 1. Update title fields
@@ -1503,8 +1705,11 @@ export default function Development() {
   const [bibleWriting,setBibleWriting]= useState(false)
   const [assetsModal, setAssetsModal] = useState(null)
   const [assetsWriting,setAssetsWriting] = useState(false)
-  const [openAssetId, setOpenAssetId] = useState(null)   // asset drawer
-  const [leftTab,     setLeftTab]     = useState('story') // 'story' | 'assets'
+  const [openAssetId, setOpenAssetId] = useState(null)
+  const [leftTab,     setLeftTab]     = useState('story')
+  const [guideModal,  setGuideModal]  = useState(null)
+  const [guideWriting,setGuideWriting]= useState(false)
+  const [guideProgress,setGuideProgress]= useState('')
   const [error,       setError]       = useState(null)
 
   // Load productions
@@ -1577,6 +1782,60 @@ export default function Development() {
     }
   }
 
+// ── Production Guide prompt builder ─────────────────────────
+function buildProductionGuidePrompt(titleNode, epStart, epEnd, existingEpisodes) {
+  const epList = existingEpisodes
+    .filter(e => e.episodenumber >= epStart && e.episodenumber <= epEnd)
+    .map(e => `Ep ${e.episodenumber}: ${e.productiontitle} — ${e.synopsis || e.logline || ''}`)
+    .join('
+')
+
+  return `You are Culmina AI Drama Studio's Production Guide Generator. Return ONLY valid JSON — no markdown, no preamble, no backticks.
+
+Generate a detailed AI Production Guide for Episodes ${epStart}–${epEnd} of:
+
+TITLE: ${titleNode.productiontitle}
+DESCRIPTION: ${titleNode.synopsis || titleNode.description || ''}
+VISUAL STYLE: ${titleNode.visualstyle || ''}
+MOOD/TONE: ${titleNode.moodtone || ''}
+${epList ? `
+EXISTING EPISODE OUTLINES:
+${epList}` : ''}
+
+Return this exact JSON structure:
+{
+  "episodes": [
+    {
+      "episodenumber": 1,
+      "name": "Episode name",
+      "targetruntime": 75,
+      "synopsis": "2-3 sentence episode summary",
+      "shots": [
+        {
+          "name": "Shot name e.g. Opening Wide",
+          "shotlength": 8,
+          "cameraangle": "e.g. Medium Two Shot",
+          "cameramovement": "e.g. Slow dolly in",
+          "subjectaction": "e.g. Marcus turns to face Mia, jaw tight",
+          "lighting": "e.g. Low Key Lighting",
+          "script": "CHARACTER: \"Dialog line here.\"
+CHARACTER 2: \"Response.\"",
+          "prompt": "Full cinematic Veo prompt 80+ words: [camera movement]: [establishing scene]. [subject action]. [lighting]. [mood]. [style details].",
+          "notes": "Production note if any"
+        }
+      ]
+    }
+  ]
+}
+
+Requirements:
+- Generate ALL episodes from ${epStart} to ${epEnd}
+- 6–8 shots per episode
+- Each episode should be 60–90 seconds total runtime
+- Shots should tell the story cinematically with clear dialog and Veo prompts
+- Return ONLY the JSON object, nothing else`
+}
+
   const runAI = async (titleNode, action) => {
     setAiLoading(l => ({ ...l, [titleNode.productionid]: action }))
     try {
@@ -1605,10 +1864,20 @@ export default function Development() {
         }
         setAssetsModal({ titleNode, parsed })
       } else {
-        const prompt = buildProductionGuidePrompt(titleNode)
-        const modalTitle = `AI Production Guide — ${titleNode.productiontitle}`
-        const result = await callClaude(prompt)
-        setModal({ title: modalTitle, content: result })
+        // Guide — show episode range modal first
+        // Count existing episodes and shots
+        const { data: existingNodes } = await supabase
+          .from('productions')
+          .select('productionid, productiongroup, productiontitle, episodenumber, synopsis, logline, parentproductionid')
+          .eq('activestatus', 'A')
+          .in('productiongroup', ['EPISODE', 'SHOT'])
+        const descendants = (existingNodes || []).filter(n => {
+          // Check if under this title by walking parentid chain (approximate via titleproductionid)
+          return true // filter happens in modal
+        })
+        const existingEpisodes = (existingNodes || []).filter(n => n.productiongroup === 'EPISODE')
+        const existingShots = (existingNodes || []).filter(n => n.productiongroup === 'SHOT').length
+        setGuideModal({ titleNode, existingEpisodes, existingShots })
       }
     } catch (e) {
       alert('AI generation failed: ' + e.message)
@@ -1646,6 +1915,46 @@ export default function Development() {
     }
     setAssetsWriting(false)
   }
+  // Confirm Production Guide write
+  const handleConfirmGuide = async (epStart, epEnd, existingEpisodes) => {
+    if (!guideModal) return
+    setGuideWriting(true)
+    try {
+      const { titleNode } = guideModal
+      const count = epEnd - epStart + 1
+      setGuideProgress(`Generating ${count} episode${count !== 1 ? 's' : ''}…`)
+
+      const prompt = buildProductionGuidePrompt(titleNode, epStart, epEnd, existingEpisodes)
+      const result = await callClaude(prompt, Math.min(count * 8000, 16000))
+      const clean = result.replace(/```json|```/g, '').trim()
+
+      let parsed
+      try {
+        parsed = JSON.parse(clean)
+      } catch {
+        const salvage = clean.replace(/,\s*$/, '').replace(/"\s*$/, '"')
+        const chars = (salvage.match(/\[/g)||[]).length - (salvage.match(/\]/g)||[]).length
+        const braces = (salvage.match(/\{/g)||[]).length - (salvage.match(/\}/g)||[]).length
+        parsed = JSON.parse(salvage + ']'.repeat(Math.max(0,chars)) + '}'.repeat(Math.max(0,braces)))
+      }
+
+      setGuideProgress('Writing to database…')
+      await writeProductionGuide(titleNode.productionid, parsed, existingEpisodes, (msg) => setGuideProgress(msg))
+      await reloadProductions()
+      setGuideModal(null)
+      setGuideProgress('')
+
+      if (view === 'grid') {
+        const refreshed = allNodes.find(n => n.productionid === titleNode.productionid)
+        if (refreshed) openTitle(refreshed)
+      }
+    } catch (e) {
+      alert('Production Guide failed: ' + e.message)
+      setGuideProgress('')
+    }
+    setGuideWriting(false)
+  }
+
   const activeSubtree = activeTitle
     ? tree.find(t => t.productionid === activeTitle.productionid)
     : null
@@ -1832,6 +2141,19 @@ export default function Development() {
           writing={assetsWriting}
           onConfirm={handleConfirmAssets}
           onClose={() => { if (!assetsWriting) setAssetsModal(null) }}
+        />
+      )}
+
+      {/* Production Guide Modal */}
+      {guideModal && (
+        <GuideModal
+          titleNode={guideModal.titleNode}
+          existingEpisodes={guideModal.existingEpisodes}
+          existingShots={guideModal.existingShots}
+          writing={guideWriting}
+          progress={guideProgress}
+          onConfirm={handleConfirmGuide}
+          onClose={() => { if (!guideWriting) { setGuideModal(null); setGuideProgress('') } }}
         />
       )}
     </div>
