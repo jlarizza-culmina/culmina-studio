@@ -908,6 +908,7 @@ Target model: ${resolvedModel}`
       {node.productiongroup === 'TITLE' && <>
         <div style={{ fontSize: '0.68rem', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '16px 0 10px', paddingTop: '12px', borderTop: `1px solid ${C.border}` }}>Series Visual Identity</div>
         {field('aspectratio', 'Aspect Ratio', { select: true, options: [{v:'9:16 Vertical',l:'9:16 Vertical — TikTok/ReelShort'},{v:'16:9 Horizontal',l:'16:9 Horizontal — YouTube/VOD'},{v:'1:1 Square',l:'1:1 Square — Instagram'},{v:'4:5',l:'4:5 — Instagram Feed'}] })}
+        {field('resolution', 'Resolution', { select: true, options: [{v:'480p',l:'480p — Draft / Preview'},{v:'720p',l:'720p — Standard HD'},{v:'1080p',l:'1080p — Full HD'},{v:'4k',l:'4K — Ultra HD'}] })}
         {field('language', 'Language', { select: true, options: ['English','Spanish','Portuguese','Mandarin','Hindi','French','Korean','Japanese'] })}
         <AiModelField />
         {field('visualstyle', 'Visual Style', { textarea: true, rows: 2, placeholder: 'e.g. Neo-noir, high contrast, deep shadows, neon accents — think Blade Runner meets Bridgerton' })}
@@ -1783,24 +1784,97 @@ export default function Development() {
   }
 
 // ── Production Guide prompt builder ─────────────────────────
-function buildProductionGuidePrompt(titleNode, epStart, epEnd, existingEpisodes) {
-  const epList = existingEpisodes
-    .filter(e => e.episodenumber >= epStart && e.episodenumber <= epEnd)
-    .map(e => `Ep ${e.episodenumber}: ${e.productiontitle} — ${e.synopsis || e.logline || ''}`)
-    .join('
-')
+// Model-specific prompt format guidance
+const MODEL_PROMPT_GUIDES = {
+  // ── Google Veo ──────────────────────────────────────────────
+  veo31:        { name: 'Veo 3.1',            draft: false, fmt: '[camera movement]: [establishing scene]. [subject action]. [lighting and atmosphere]. [style]. Aspect ratio and duration.' },
+  veo3:         { name: 'Veo 3',              draft: false, fmt: '[camera movement]: [establishing scene]. [subject action]. [lighting]. [mood and style details].' },
+  veo2:         { name: 'Veo 2',              draft: false, fmt: '[camera movement]: [establishing scene]. [subject action]. [lighting]. [cinematic style]. Aspect ratio 9:16.' },
+  veo_fast:     { name: 'Veo Fast (Draft)',   draft: true,  fmt: '[camera movement]: [scene]. [action]. [lighting]. Keep prompt concise — draft quality pass.' },
+  // ── Runway ──────────────────────────────────────────────────
+  runway_gen4:  { name: 'Runway Gen-4',       draft: false, fmt: '[camera movement]: [establishing scene]. [subject action and motion]. [lighting]. [visual style]. Under 200 words.' },
+  runway_gen3:  { name: 'Runway Gen-3 Alpha', draft: false, fmt: '[camera movement]: [establishing scene]. [additional details about subject and scene]. [lighting and mood].' },
+  runway_turbo: { name: 'Runway Gen-3 Turbo', draft: true,  fmt: 'Motion-only (input image provided). [camera movement]. [subject motion]. [scene change if any]. Concise.' },
+  // ── Other models ────────────────────────────────────────────
+  kling2:       { name: 'Kling 2.0',          draft: false, fmt: '[camera movement] of [subject] in [scene]. [action]. [lighting]. [style]. Photorealistic.' },
+  luma:         { name: 'Luma Dream Machine', draft: false, fmt: '[Camera movement], [subject description and action], [setting], [lighting], [mood], [style].' },
+  sora:         { name: 'Sora',               draft: false, fmt: '[camera movement]: [detailed scene description]. [subject action]. [lighting]. [cinematic quality descriptors].' },
+  grok_aurora:  { name: 'Grok Aurora',        draft: false, fmt: 'Cinematic [aspect ratio] video: [camera movement] capturing [subject] in [scene]. [action]. [lighting]. [mood]. [style]. Photorealistic.' },
+  default:      { name: 'Veo 3.1',            draft: false, fmt: '[camera movement]: [establishing scene]. [subject action]. [lighting and atmosphere]. [style].' },
+}
+
+// Fully-enriched production guide prompt
+// episodeContexts = array of { episode, characters, sets, props, lightingSnippet }
+function buildProductionGuidePrompt(titleNode, epStart, epEnd, episodeContexts) {
+
+  const modelKey = titleNode.aimodel || 'default'
+  const modelGuide = MODEL_PROMPT_GUIDES[modelKey] || MODEL_PROMPT_GUIDES.default
+  const modelName  = modelGuide.name
+  const promptFmt  = modelGuide.fmt
+  const isDraft    = modelGuide.draft
+  const isImgToVid = modelKey === 'runway_turbo'
+
+  // ── Series-level context ──────────────────────────────────
+  const seriesCtx = [
+    titleNode.productiontitle      && `TITLE: ${titleNode.productiontitle}`,
+    titleNode.synopsis             && `DESCRIPTION: ${titleNode.synopsis}`,
+    titleNode.settingdescription   && `SETTING: ${titleNode.settingdescription}`,
+    titleNode.timeperiod           && `TIME PERIOD: ${titleNode.timeperiod}`,
+    titleNode.visualstyle          && `VISUAL STYLE: ${titleNode.visualstyle}`,
+    titleNode.moodtone             && `MOOD/TONE: ${titleNode.moodtone}`,
+    titleNode.tone                 && `TONE: ${titleNode.tone}`,
+    titleNode.lensdof              && `LENS/DOF: ${titleNode.lensdof}`,
+    titleNode.aspectratio          && `ASPECT RATIO: ${titleNode.aspectratio}`,
+    titleNode.resolution           && `RESOLUTION: ${titleNode.resolution}`,
+    titleNode.language             && `LANGUAGE: ${titleNode.language}`,
+    titleNode.negativeprompt       && `NEGATIVE PROMPT (exclude from all shots): ${titleNode.negativeprompt}`,
+  ].filter(Boolean).join('\n')
+
+  // ── Per-episode context blocks ─────────────────────────────
+  const epBlocks = (episodeContexts || []).map(ctx => {
+    const ep      = ctx.episode
+    const chars   = (ctx.characters || []).map(c =>
+      `  - ${c.assetname}${c.instancename ? ` [${c.instancename}]` : ''}${c.description ? `: ${c.description.slice(0,120)}` : ''}${c.prompt ? ` | Image ref: ${c.prompt.slice(0,100)}` : ''}`
+    ).join('\n')
+    const sets    = (ctx.sets || []).map(s =>
+      `  - ${s.assetname}${s.description ? `: ${s.description.slice(0,120)}` : ''}${s.promptsnippet ? ` | Env prompt: ${s.promptsnippet.slice(0,100)}` : ''}`
+    ).join('\n')
+    const props   = (ctx.props || []).map(p => `  - ${p.assetname}`).join('\n')
+
+    return [
+      `EPISODE ${ep.episodenumber}: ${ep.productiontitle || ep.name || ''}`,
+      ep.synopsis   && `  Synopsis: ${ep.synopsis}`,
+      ep.logline    && `  Logline: ${ep.logline}`,
+      ep.cliffhanger && `  Cliffhanger: ${ep.cliffhanger}`,
+      ep.script     && `  Script:\n${ep.script}`,
+      chars         && `  Characters in episode:\n${chars}`,
+      sets          && `  Sets in episode:\n${sets}`,
+      props         && `  Props: ${props}`,
+      ctx.lightingSnippet && `  Lighting: ${ctx.lightingSnippet}`,
+    ].filter(Boolean).join('\n')
+  }).join('\n\n')
+
+  const draftNote = isDraft
+    ? '\nDRAFT MODE: This is a draft/preview pass. Prompts can be shorter (40+ words). Focus on composition and action — quality will be refined in final pass.'
+    : ''
+
+  const imgToVidNote = isImgToVid
+    ? '\nIMAGE-TO-VIDEO MODE: Input image is provided. Prompts must focus ONLY on motion — do not describe what is already in the image. Describe camera movement and subject motion only.'
+    : ''
 
   return `You are Culmina AI Drama Studio's Production Guide Generator. Return ONLY valid JSON — no markdown, no preamble, no backticks.
 
-Generate a detailed AI Production Guide for Episodes ${epStart}–${epEnd} of:
+TARGET MODEL: ${modelName}${isDraft ? ' [DRAFT PASS]' : ''}
+${seriesCtx}
+${draftNote}${imgToVidNote}
 
-TITLE: ${titleNode.productiontitle}
-DESCRIPTION: ${titleNode.synopsis || titleNode.description || ''}
-VISUAL STYLE: ${titleNode.visualstyle || ''}
-MOOD/TONE: ${titleNode.moodtone || ''}
-${epList ? `
-EXISTING EPISODE OUTLINES:
-${epList}` : ''}
+EPISODE CONTEXT:
+${epBlocks || 'No existing episode outlines — generate from series description above.'}
+
+PROMPT FORMAT for ${modelName}:
+${promptFmt}
+
+Generate a shot-by-shot production guide for Episodes ${epStart}–${epEnd}.
 
 Return this exact JSON structure:
 {
@@ -1818,10 +1892,9 @@ Return this exact JSON structure:
           "cameramovement": "e.g. Slow dolly in",
           "subjectaction": "e.g. Marcus turns to face Mia, jaw tight",
           "lighting": "e.g. Low Key Lighting",
-          "script": "CHARACTER: \"Dialog line here.\"
-CHARACTER 2: \"Response.\"",
-          "prompt": "Full cinematic Veo prompt 80+ words: [camera movement]: [establishing scene]. [subject action]. [lighting]. [mood]. [style details].",
-          "notes": "Production note if any"
+          "script": "CHARACTER: \"Line here.\"\nCHARACTER 2: \"Response.\"",
+          "prompt": "${isDraft ? '40+ word draft prompt' : '80+ word ' + modelName + '-optimized prompt'} following the format above — reference specific characters and sets from context above by name",
+          "notes": "Production note or continuity flag"
         }
       ]
     }
@@ -1830,9 +1903,10 @@ CHARACTER 2: \"Response.\"",
 
 Requirements:
 - Generate ALL episodes from ${epStart} to ${epEnd}
-- 6–8 shots per episode
-- Each episode should be 60–90 seconds total runtime
-- Shots should tell the story cinematically with clear dialog and Veo prompts
+- 6–8 shots per episode, each 6–10 seconds
+- Each episode 60–90 seconds total runtime
+- Reference characters, sets, and props from the episode context by name in prompts
+- Cliffhanger should drive the final shot of each episode
 - Return ONLY the JSON object, nothing else`
 }
 
@@ -1922,28 +1996,65 @@ Requirements:
     try {
       const { titleNode } = guideModal
       const count = epEnd - epStart + 1
-      setGuideProgress(`Generating ${count} episode${count !== 1 ? 's' : ''}…`)
 
-      const prompt = buildProductionGuidePrompt(titleNode, epStart, epEnd, existingEpisodes)
+      // 1. Fetch lighting lookup table
+      setGuideProgress('Loading context…')
+      const { data: lightingData } = await supabase
+        .from('lighting').select('name, promptsnippet').eq('activestatus', 'A')
+      const lightingMap = {}
+      ;(lightingData || []).forEach(l => { lightingMap[l.name.toLowerCase()] = l.promptsnippet })
+
+      // 2. Fetch episode-level assets for episodes in range
+      const epsInRange = existingEpisodes.filter(e => e.episodenumber >= epStart && e.episodenumber <= epEnd)
+      const epIds = epsInRange.map(e => e.productionid)
+      let assetsByEp = {}
+      if (epIds.length > 0) {
+        const { data: paData } = await supabase
+          .from('production_assets')
+          .select('productionid, assets(assetid, assetname, name, assettype, description), assetinstances(instanceid, instancename, prompt)')
+          .in('productionid', epIds).eq('activestatus', 'A').eq('included', true)
+        ;(paData || []).forEach(pa => {
+          if (!assetsByEp[pa.productionid]) assetsByEp[pa.productionid] = []
+          assetsByEp[pa.productionid].push(pa)
+        })
+      }
+
+      // 3. Build enriched episode context objects
+      const episodeContexts = epsInRange.length > 0
+        ? epsInRange.map(ep => {
+            const epAssets = assetsByEp[ep.productionid] || []
+            const chars = epAssets.filter(pa => ['Person','Animal','AnimateObject'].includes(pa.assets?.assettype))
+              .map(pa => ({ assetname: pa.assets?.assetname || pa.assets?.name, instancename: pa.assetinstances?.instancename, description: pa.assets?.description, prompt: pa.assetinstances?.prompt }))
+            const sets  = epAssets.filter(pa => pa.assets?.assettype === 'Set')
+              .map(pa => ({ assetname: pa.assets?.assetname || pa.assets?.name, description: pa.assets?.description, promptsnippet: pa.assetinstances?.prompt }))
+            const props = epAssets.filter(pa => pa.assets?.assettype === 'Prop')
+              .map(pa => ({ assetname: pa.assets?.assetname || pa.assets?.name }))
+            const lightingSnippet = lightingMap[(ep.lighting || '').toLowerCase()] || ep.lighting || ''
+            return { episode: ep, characters: chars, sets, props, lightingSnippet }
+          })
+        : []
+
+      // 4. Generate prompt and call Claude
+      setGuideProgress(`Generating ${count} episode${count !== 1 ? 's' : ''}…`)
+      const prompt = buildProductionGuidePrompt(titleNode, epStart, epEnd, episodeContexts)
       const result = await callClaude(prompt, Math.min(count * 8000, 16000))
       const clean = result.replace(/```json|```/g, '').trim()
-
       let parsed
       try {
         parsed = JSON.parse(clean)
       } catch {
-        const salvage = clean.replace(/,\s*$/, '').replace(/"\s*$/, '"')
-        const chars = (salvage.match(/\[/g)||[]).length - (salvage.match(/\]/g)||[]).length
-        const braces = (salvage.match(/\{/g)||[]).length - (salvage.match(/\}/g)||[]).length
-        parsed = JSON.parse(salvage + ']'.repeat(Math.max(0,chars)) + '}'.repeat(Math.max(0,braces)))
+        const salvage = clean.replace(/,\s*$/, '')
+        const ad = (salvage.match(/\[/g)||[]).length - (salvage.match(/\]/g)||[]).length
+        const od = (salvage.match(/\{/g)||[]).length - (salvage.match(/\}/g)||[]).length
+        parsed = JSON.parse(salvage + ']'.repeat(Math.max(0,ad)) + '}'.repeat(Math.max(0,od)))
       }
 
+      // 5. Write to DB
       setGuideProgress('Writing to database…')
       await writeProductionGuide(titleNode.productionid, parsed, existingEpisodes, (msg) => setGuideProgress(msg))
       await reloadProductions()
       setGuideModal(null)
       setGuideProgress('')
-
       if (view === 'grid') {
         const refreshed = allNodes.find(n => n.productionid === titleNode.productionid)
         if (refreshed) openTitle(refreshed)
