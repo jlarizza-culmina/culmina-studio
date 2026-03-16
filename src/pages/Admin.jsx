@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import ScoringModelsTab from '../components/ScoringModelsTab'
 import DiscoverySourcesTab from '../components/DiscoverySourcesTab'
+import LightingTab from '../components/LightingTab'
+import CameraMovementsTab from '../components/CameraMovementsTab'
 
 
 const GOLD = '#C9924A'
@@ -499,6 +501,8 @@ export default function Admin() {
     { id: 'nvpair', label: 'NVPair Editor' },
     { id: 'system', label: 'System Settings' },
     { id: 'discovery', label: 'Discovery Sources' },
+    { id: 'lighting', label: 'Lighting' },
+    { id: 'camera', label: 'Camera Movements' },
 ]
 
   return (
@@ -521,6 +525,8 @@ export default function Admin() {
       {activeTab === 'system' && <SystemTab />}
       {activeTab === 'scoring' && <ScoringModelsTab />}
       {activeTab === 'discovery' && <DiscoverySourcesTab />}
+      {activeTab === 'lighting'   && <LightingTab />}
+      {activeTab === 'camera'     && <CameraMovementsTab />}
     </div>
   )
 }
