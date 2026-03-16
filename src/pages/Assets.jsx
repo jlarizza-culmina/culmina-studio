@@ -724,15 +724,6 @@ function AssetForm({ assetId, onClose, onSaved, onCloned }) {
 
 export default function Assets() {
   
-  // Auto-open asset from URL param (e.g. navigated from Development module)
-  const [searchParams, setSearchParams] = useSearchParams()
-  useEffect(() => {
-    const assetid = searchParams.get('assetid')
-    if (assetid) {
-      setOpenAssetId(Number(assetid)); setShowForm(true)
-      setSearchParams({}, { replace: true })  // clean URL
-    }
-  }, [])
 const [viewMode,     setViewMode]     = useState('grid')
   const [typeFilter,   setTypeFilter]   = useState('All')
   const [domainFilter, setDomainFilter] = useState('All')
