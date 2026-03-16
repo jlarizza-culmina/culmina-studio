@@ -1,3 +1,4 @@
+import { useSearchParams } from 'react-router-dom'
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
@@ -29,7 +30,7 @@ const TYPE_COLORS = {
   Sound:            { bg:'rgba(150,100,200,0.15)', color:'#A87AC8' },
   Other:            { bg:'rgba(92,87,78,0.2)',     color:MUTED },
 }
-const ASSET_TYPES = ['Character','Animal','Animate Object','Set','Prop','Sound','Other']
+const ASSET_TYPES = ['Person','Animal','Animate Object','Set','Prop','Sound','Other']
 const IMAGE_AI_MODELS = ['Google Imagen 4','Google Imagen 4 Ultra','Google Imagen 4 Fast','Midjourney','DALL-E 3','Stable Diffusion','Flux']
 const AUDIO_AI_MODELS = ['ElevenLabs','Suno','Udio','Mubert','Adobe Podcast','Bark','MusicGen']
 
@@ -51,7 +52,7 @@ const lbl = { display:'block', fontSize:'0.68rem', color:CHARCOAL, letterSpacing
 const mkInp = (lk) => ({ width:'100%', background:lk?'rgba(255,255,255,0.02)':SURFACE2, border:`1px solid ${BORDER}`, color:lk?MUTED:CREAM, padding:'9px 12px', fontFamily:'DM Sans, sans-serif', fontSize:'0.82rem', outline:'none', boxSizing:'border-box' })
 const mkSel = (lk) => ({ ...mkInp(lk), cursor:lk?'default':'pointer' })
 const mkTxt = (lk) => ({ ...mkInp(lk), minHeight:'72px', resize:'vertical' })
-function iconFor(t) { return t==='Character'?'👤':t==='Animal'?'🐾':t==='Animate Object'?'🤖':t==='Set'?'🏛':t==='Prop'?'🎭':t==='Sound'?'🔊':'📦' }
+function iconFor(t) { return t==='Person'?'👤':t==='Animal'?'🐾':t==='Animate Object'?'🤖':t==='Set'?'🏛':t==='Prop'?'🎭':t==='Sound'?'🔊':'📦' }
 
 function Spinner({ label, value, onChange, min=0, max=999, disabled=false }) {
   const btn = { width:'28px', height:'28px', background:'rgba(255,255,255,0.06)', border:`1px solid ${BORDER}`, color:disabled?MUTED:CREAM, cursor:disabled?'default':'pointer', fontSize:'1rem', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, userSelect:'none' }
@@ -242,7 +243,7 @@ function ImageCreationPanel({ prompt, locked, isSound, onFinalSelected }) {
 function InstanceForm({ data, onChange, assetMeta, locked, onSaveReminder }) {
   const { assettype } = assetMeta
   const inp = mkInp(locked); const sel = mkSel(locked); const txt = mkTxt(locked)
-  const isChar   = assettype==='Character'
+  const isChar   = assettype==='Person'
   const isAnimal = assettype==='Animal'
   const isAnimObj= assettype==='Animate Object'
   const isSet    = assettype==='Set'
@@ -540,7 +541,7 @@ function AssetForm({ assetId, onClose, onSaved, onCloned }) {
   const { endUser } = useAuth()
   const [savedAssetId, setSavedAssetId] = useState(assetId)
   const isNew = !savedAssetId
-  const [assetMeta, setAssetMeta] = useState({ name:'', assettype:'Character', domain:'User Domain', aigenerated:false, royaltyeligible:false, locked:false })
+  const [assetMeta, setAssetMeta] = useState({ name:'', assettype:'Person', domain:'User Domain', aigenerated:false, royaltyeligible:false, locked:false })
   const [instances, setInstances] = useState([{ _tempId:1, ...BLANK_INSTANCE }])
   const [activeKey, setActiveKey] = useState(1)
   const [addingInst,  setAddingInst]  = useState(false)
@@ -722,7 +723,17 @@ function AssetForm({ assetId, onClose, onSaved, onCloned }) {
 }
 
 export default function Assets() {
-  const [viewMode,     setViewMode]     = useState('grid')
+  
+  // Auto-open asset from URL param (e.g. navigated from Development module)
+  const [searchParams, setSearchParams] = useSearchParams()
+  useEffect(() => {
+    const assetid = searchParams.get('assetid')
+    if (assetid) {
+      setDrawerAssetId(Number(assetid))
+      setSearchParams({}, { replace: true })  // clean URL
+    }
+  }, [])
+const [viewMode,     setViewMode]     = useState('grid')
   const [typeFilter,   setTypeFilter]   = useState('All')
   const [domainFilter, setDomainFilter] = useState('All')
   const [assets,       setAssets]       = useState([])
