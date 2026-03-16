@@ -18,7 +18,8 @@ function apiProxy() {
         req.on('data', chunk => { body += chunk })
         req.on('end', async () => {
           try {
-            const { prompt, max_tokens = 2000 } = JSON.parse(body)
+            // Pass the full request body through — don't destructure or override
+            const parsed = JSON.parse(body)
             const response = await fetch('https://api.anthropic.com/v1/messages', {
               method: 'POST',
               headers: {
@@ -27,9 +28,9 @@ function apiProxy() {
                 'anthropic-version': '2023-06-01',
               },
               body: JSON.stringify({
-                model: 'claude-sonnet-4-20250514',
-                max_tokens,
-                messages: [{ role: 'user', content: prompt }],
+                model:      parsed.model      || 'claude-sonnet-4-20250514',
+                max_tokens: parsed.max_tokens || 2000,
+                messages:   parsed.messages   || [{ role: 'user', content: parsed.prompt || '' }],
               }),
             })
             const data = await response.text()
