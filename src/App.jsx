@@ -16,6 +16,7 @@ import Profile from './pages/Profile'
 import SevenStages from './pages/SevenStages'
 import SeriesManager from './pages/SeriesManager'
 import Lighting from './pages/Lighting'
+import CameraMovements from './pages/CameraMovements'
 import Documents from './pages/Documents'
 
 export default function App() {
@@ -45,6 +46,7 @@ export default function App() {
         <Route path="series" element={<SeriesManager />} />
         <Route path="repository" element={<Documents />} />
         <Route path="lighting" element={<Lighting />} />
+        <Route path="camera-movements" element={<CameraMovements />} />
       </Route>
 
       {/* Fallback */}
