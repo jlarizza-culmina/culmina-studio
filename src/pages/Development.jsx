@@ -346,13 +346,148 @@ function Modal({ title, content, onClose, biblePreview, onConfirmBible, bibleWri
   )
 }
 
+// ── Inheritance resolution ───────────────────────────────────
+// Walks up the node's ancestor chain (passed as ancestorMap) to find
+// the nearest non-null value for a field. Returns { value, sourceGroup }.
+function resolveInherited(key, node, allNodes) {
+  const map = {}
+  allNodes.forEach(n => { map[n.productionid] = n })
+  let current = node
+  while (current) {
+    const val = current[key]
+    if (val !== null && val !== undefined && val !== '') {
+      return { value: val, sourceGroup: current.productiongroup, sourceId: current.productionid }
+    }
+    current = current.parentproductionid ? map[current.parentproductionid] : null
+  }
+  return { value: null, sourceGroup: null, sourceId: null }
+}
+
+// Resolve additive negative prompts from root down to node
+function resolveNegativePrompts(node, allNodes) {
+  const map = {}
+  allNodes.forEach(n => { map[n.productionid] = n })
+  const chain = []
+  let current = node
+  while (current) {
+    chain.unshift(current)
+    current = current.parentproductionid ? map[current.parentproductionid] : null
+  }
+  return chain.filter(n => n.negativeprompt).map(n => n.negativeprompt).join(', ')
+}
+
+const LEVEL_BADGE_COLORS = {
+  TITLE: '#C9924A', ARC: '#9C7AC8', ACT: '#7A9EC8',
+  EPISODE: '#4A9C7A', SHOT: '#C87A4A',
+}
+
 // Detail view for a selected node
-function NodeDetailPanel({ node, onSave, onAddChild }) {
-  const [form, setForm] = useState({})
+function NodeDetailPanel({ node, onSave, onAddChild, allNodes }) {
+  const [form,          setForm]          = useState({})
+  const [shotAssets,    setShotAssets]    = useState([])   // production_assets for this shot
+  const [episodeAssets, setEpisodeAssets] = useState([])   // production_assets for parent episode
+  const [availAssets,   setAvailAssets]   = useState([])   // all assets for this title
+  const [assetTab,      setAssetTab]      = useState('cast') // 'cast' | 'sets' | 'props' | 'other'
+  const [loadingAssets, setLoadingAssets] = useState(false)
 
   useEffect(() => {
-    if (node) setForm({ ...node })
+    if (node) {
+      setForm({ ...node })
+      if (node.productiongroup === 'EPISODE' || node.productiongroup === 'SHOT') {
+        loadAssetData(node)
+      }
+    }
   }, [node?.productionid])
+
+  const loadAssetData = async (n) => {
+    setLoadingAssets(true)
+    // Find title productionid by walking up
+    const map = {}
+    allNodes.forEach(a => { map[a.productionid] = a })
+    let cur = n
+    while (cur && cur.productiongroup !== 'TITLE') {
+      cur = cur.parentproductionid ? map[cur.parentproductionid] : null
+    }
+    const titleId = cur?.productionid || cur?.titleproductionid
+
+    // Load all assets for this title
+    if (titleId) {
+      const { data: assets } = await supabase
+        .from('assets')
+        .select('assetid, assetname, name, assettype, characterimportance, assetinstances(instanceid, instancename)')
+        .eq('titleproductionid', titleId)
+        .eq('activestatus', 'A')
+        .order('assetname')
+      setAvailAssets(assets || [])
+    }
+
+    // Load this node's production_assets
+    const { data: nodeAssets } = await supabase
+      .from('production_assets')
+      .select('*, assets(assetname, name, assettype), assetinstances(instancename)')
+      .eq('productionid', n.productionid)
+      .eq('activestatus', 'A')
+    setShotAssets(nodeAssets || [])
+
+    // If shot, also load parent episode assets
+    if (n.productiongroup === 'SHOT' && n.parentproductionid) {
+      const { data: epAssets } = await supabase
+        .from('production_assets')
+        .select('*, assets(assetname, name, assettype), assetinstances(instancename)')
+        .eq('productionid', n.parentproductionid)
+        .eq('activestatus', 'A')
+      setEpisodeAssets(epAssets || [])
+    } else {
+      setEpisodeAssets([])
+    }
+    setLoadingAssets(false)
+  }
+
+  const toggleShotAsset = async (epAsset, included) => {
+    // Check if override already exists
+    const existing = shotAssets.find(s =>
+      s.assetid === epAsset.assetid &&
+      (s.instanceid === epAsset.instanceid || (!s.instanceid && !epAsset.instanceid))
+    )
+    if (existing) {
+      if (existing.included === included) {
+        // Remove override — delete the shot-level row
+        await supabase.from('production_assets').delete().eq('id', existing.id)
+      } else {
+        await supabase.from('production_assets').update({ included }).eq('id', existing.id)
+      }
+    } else {
+      await supabase.from('production_assets').insert([{
+        productionid: node.productionid,
+        assetid:      epAsset.assetid,
+        instanceid:   epAsset.instanceid || null,
+        assetlevel:   'SHOT',
+        included,
+        activestatus: 'A',
+      }])
+    }
+    await loadAssetData(node)
+  }
+
+  const addEpisodeAsset = async (assetid, instanceid) => {
+    const existing = (node.productiongroup === 'SHOT' ? shotAssets : shotAssets)
+      .find(a => a.assetid === assetid && a.instanceid === (instanceid || null))
+    if (existing) return
+    await supabase.from('production_assets').insert([{
+      productionid: node.productionid,
+      assetid,
+      instanceid:   instanceid || null,
+      assetlevel:   node.productiongroup,
+      included:     true,
+      activestatus: 'A',
+    }])
+    await loadAssetData(node)
+  }
+
+  const removeAsset = async (paId) => {
+    await supabase.from('production_assets').update({ activestatus: 'I' }).eq('id', paId)
+    await loadAssetData(node)
+  }
 
   if (!node) return (
     <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.muted, fontSize: '0.85rem' }}>
@@ -360,37 +495,213 @@ function NodeDetailPanel({ node, onSave, onAddChild }) {
     </div>
   )
 
+  // ── Inherited field renderer ──────────────────────────────
+  const inheritableField = (key, label, opts = {}) => {
+    const isShot = node.productiongroup === 'SHOT'
+    const isShotOnly = opts.shotOnly
+    const resolved = resolveInherited(key, node, allNodes)
+    const isOverriding = form[key] && form[key] !== '' &&
+      resolved.sourceId !== node.productionid &&
+      resolved.value === form[key]
+    const inheritedFrom = resolved.sourceGroup && resolved.sourceId !== node.productionid
+      ? resolved.sourceGroup : null
+    const placeholder = inheritedFrom
+      ? `↑ ${inheritedFrom}: ${(resolved.value || '').slice(0, 50)}${resolved.value?.length > 50 ? '…' : ''}`
+      : (opts.placeholder || '')
+
+    return (
+      <div style={{ marginBottom: '14px' }} key={key}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '5px' }}>
+          <label style={{ fontSize: '0.68rem', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</label>
+          {inheritedFrom && !form[key] && (
+            <span style={{ fontSize: '0.6rem', background: `${LEVEL_BADGE_COLORS[inheritedFrom]}22`, color: LEVEL_BADGE_COLORS[inheritedFrom], padding: '1px 6px', borderRadius: '3px', letterSpacing: '0.06em' }}>
+              ↑ {inheritedFrom}
+            </span>
+          )}
+          {form[key] && inheritedFrom && (
+            <span style={{ fontSize: '0.6rem', background: 'rgba(74,156,122,0.15)', color: C.green, padding: '1px 6px', borderRadius: '3px' }}>
+              OVERRIDDEN
+            </span>
+          )}
+          {form[key] && inheritedFrom && (
+            <button
+              onClick={() => setForm(f => ({ ...f, [key]: '' }))}
+              style={{ fontSize: '0.58rem', color: C.muted, background: 'none', border: 'none', cursor: 'pointer', marginLeft: 'auto', padding: '0 4px' }}
+            >↩ Revert</button>
+          )}
+        </div>
+        {opts.textarea ? (
+          <textarea
+            value={form[key] || ''}
+            onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+            placeholder={placeholder}
+            rows={opts.rows || 3}
+            style={{ width: '100%', background: C.dim, border: `1px solid ${form[key] ? C.green + '44' : C.border}`, borderRadius: '6px', padding: '8px 10px', color: C.cream, fontSize: '0.82rem', resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }}
+          />
+        ) : opts.select ? (
+          <select
+            value={form[key] || ''}
+            onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+            style={{ width: '100%', background: C.dim, border: `1px solid ${form[key] ? C.green + '44' : C.border}`, borderRadius: '6px', padding: '8px 10px', color: form[key] ? C.cream : C.muted, fontSize: '0.82rem' }}
+          >
+            <option value="">{placeholder || '— Select —'}</option>
+            {opts.options.map(o => <option key={o} value={o}>{o}</option>)}
+          </select>
+        ) : (
+          <input
+            type="text"
+            value={form[key] || ''}
+            onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+            placeholder={placeholder}
+            style={{ width: '100%', background: C.dim, border: `1px solid ${form[key] ? C.green + '44' : C.border}`, borderRadius: '6px', padding: '8px 10px', color: C.cream, fontSize: '0.82rem', boxSizing: 'border-box' }}
+          />
+        )}
+      </div>
+    )
+  }
+
+  // ── Standard field (non-inheritable) ─────────────────────
   const field = (key, label, opts = {}) => (
     <div style={{ marginBottom: '14px' }} key={key}>
       <label style={{ display: 'block', fontSize: '0.68rem', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '5px' }}>{label}</label>
       {opts.textarea ? (
-        <textarea
-          value={form[key] || ''}
-          onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+        <textarea value={form[key] || ''} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
           rows={opts.rows || 3}
-          style={{ width: '100%', background: C.dim, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '8px 10px', color: C.cream, fontSize: '0.82rem', resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }}
-        />
+          style={{ width: '100%', background: C.dim, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '8px 10px', color: C.cream, fontSize: '0.82rem', resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }} />
       ) : opts.select ? (
-        <select
-          value={form[key] || ''}
-          onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-          style={{ width: '100%', background: C.dim, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '8px 10px', color: C.cream, fontSize: '0.82rem' }}
-        >
+        <select value={form[key] || ''} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+          style={{ width: '100%', background: C.dim, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '8px 10px', color: C.cream, fontSize: '0.82rem' }}>
           <option value="">— Select —</option>
           {opts.options.map(o => <option key={o} value={o}>{o}</option>)}
         </select>
       ) : (
-        <input
-          type="text"
-          value={form[key] || ''}
-          onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-          style={{ width: '100%', background: C.dim, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '8px 10px', color: C.cream, fontSize: '0.82rem', boxSizing: 'border-box' }}
-        />
+        <input type="text" value={form[key] || ''} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+          style={{ width: '100%', background: C.dim, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '8px 10px', color: C.cream, fontSize: '0.82rem', boxSizing: 'border-box' }} />
       )}
     </div>
   )
 
+  // ── Asset panel (Episode + Shot) ──────────────────────────
+  const AssetPanel = () => {
+    const isShot = node.productiongroup === 'SHOT'
+    const displayAssets = isShot ? episodeAssets : shotAssets
+    const ownAssets = shotAssets
+
+    // For shots: episode assets with shot-level override state
+    const getShotState = (epAsset) => {
+      const override = ownAssets.find(s =>
+        s.assetid === epAsset.assetid &&
+        (s.instanceid === epAsset.instanceid || (!s.instanceid && !epAsset.instanceid))
+      )
+      if (!override) return 'inherited'  // included by default
+      return override.included ? 'included' : 'excluded'
+    }
+
+    const filterByTab = (assets) => assets.filter(a => {
+      const type = a.assets?.assettype || ''
+      if (assetTab === 'cast') return ['Person','Animal','AnimateObject'].includes(type)
+      if (assetTab === 'sets') return type === 'Set'
+      if (assetTab === 'props') return type === 'Prop'
+      return !['Person','Animal','AnimateObject','Set','Prop'].includes(type)
+    })
+
+    return (
+      <div style={{ marginTop: '24px', borderTop: `1px solid ${C.border}`, paddingTop: '16px' }}>
+        <div style={{ fontSize: '0.68rem', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '10px' }}>
+          {isShot ? 'Shot Assets (inherited from Episode)' : 'Episode Assets'}
+        </div>
+
+        {/* Asset type tabs */}
+        <div style={{ display: 'flex', gap: '4px', marginBottom: '12px', flexWrap: 'wrap' }}>
+          {[['cast','👥 Cast'],['sets','🏛 Sets'],['props','📦 Props'],['other','◈ Other']].map(([k,l]) => (
+            <button key={k} onClick={() => setAssetTab(k)} style={{
+              padding: '4px 10px', borderRadius: '4px', border: `1px solid ${assetTab === k ? C.gold : C.border}`,
+              background: assetTab === k ? 'rgba(201,146,74,0.1)' : 'transparent',
+              color: assetTab === k ? C.gold : C.muted, fontSize: '0.68rem', cursor: 'pointer',
+            }}>{l}</button>
+          ))}
+        </div>
+
+        {loadingAssets ? (
+          <div style={{ fontSize: '0.72rem', color: C.muted }}>Loading…</div>
+        ) : isShot ? (
+          // Shot view: episode assets as checkboxes
+          <div>
+            {filterByTab(episodeAssets).length === 0 && (
+              <div style={{ fontSize: '0.72rem', color: C.muted }}>No episode assets in this category</div>
+            )}
+            {filterByTab(episodeAssets).map(ea => {
+              const state = getShotState(ea)
+              const label = ea.assets?.assetname || ea.assets?.name || 'Unknown'
+              const inst = ea.assetinstances?.instancename
+              return (
+                <div key={ea.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 0', borderBottom: `1px solid ${C.border}` }}>
+                  <div style={{ display: 'flex', gap: '4px' }}>
+                    <button onClick={() => toggleShotAsset(ea, true)} style={{
+                      width: '18px', height: '18px', borderRadius: '3px', border: `1px solid ${state !== 'excluded' ? C.green : C.border}`,
+                      background: state !== 'excluded' ? 'rgba(74,156,122,0.2)' : 'transparent',
+                      cursor: 'pointer', fontSize: '0.6rem', color: C.green,
+                    }}>✓</button>
+                    <button onClick={() => toggleShotAsset(ea, false)} style={{
+                      width: '18px', height: '18px', borderRadius: '3px', border: `1px solid ${state === 'excluded' ? C.red : C.border}`,
+                      background: state === 'excluded' ? 'rgba(200,122,74,0.2)' : 'transparent',
+                      cursor: 'pointer', fontSize: '0.6rem', color: C.red,
+                    }}>✕</button>
+                  </div>
+                  <span style={{ fontSize: '0.75rem', color: state === 'excluded' ? C.muted : C.cream, textDecoration: state === 'excluded' ? 'line-through' : 'none', flex: 1 }}>
+                    {label}{inst ? ` — ${inst}` : ''}
+                  </span>
+                  {state === 'inherited' && <span style={{ fontSize: '0.6rem', color: C.muted }}>↑ EP</span>}
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          // Episode view: own assets list + add from available
+          <div>
+            {filterByTab(ownAssets).map(a => (
+              <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 0', borderBottom: `1px solid ${C.border}` }}>
+                <span style={{ fontSize: '0.72rem', flex: 1, color: C.cream }}>
+                  {a.assets?.assetname || a.assets?.name}
+                  {a.assetinstances?.instancename ? ` — ${a.assetinstances.instancename}` : ''}
+                </span>
+                <button onClick={() => removeAsset(a.id)} style={{ background: 'none', border: 'none', color: C.muted, cursor: 'pointer', fontSize: '0.7rem' }}>✕</button>
+              </div>
+            ))}
+            {/* Add asset from title pool */}
+            <div style={{ marginTop: '10px' }}>
+              <select
+                onChange={e => {
+                  if (!e.target.value) return
+                  const [aid, iid] = e.target.value.split(':')
+                  addEpisodeAsset(Number(aid), iid ? Number(iid) : null)
+                  e.target.value = ''
+                }}
+                style={{ width: '100%', background: C.dim, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '6px 8px', color: C.muted, fontSize: '0.72rem' }}
+              >
+                <option value="">+ Add asset…</option>
+                {filterByTab(availAssets.map(a => ({ assets: a, assetid: a.assetid, instanceid: null }))).map(a => {
+                  const asset = a.assets
+                  return [
+                    <option key={`${asset.assetid}:null`} value={`${asset.assetid}:`}>{asset.assetname || asset.name}</option>,
+                    ...(asset.assetinstances || []).map(inst => (
+                      <option key={`${asset.assetid}:${inst.instanceid}`} value={`${asset.assetid}:${inst.instanceid}`}>
+                        {asset.assetname || asset.name} — {inst.instancename}
+                      </option>
+                    ))
+                  ]
+                })}
+              </select>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
   const childType = CHILD_MAP[node.productiongroup]
+  const isEpisodeOrShot = node.productiongroup === 'EPISODE' || node.productiongroup === 'SHOT'
+  const resolvedNeg = resolveNegativePrompts(node, allNodes)
 
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
@@ -399,43 +710,102 @@ function NodeDetailPanel({ node, onSave, onAddChild }) {
         <span style={{ fontSize: '0.95rem', color: LEVEL_COLORS[node.productiongroup] }}>{LEVEL_ICONS[node.productiongroup]}</span>
         <span style={{ fontSize: '0.7rem', color: LEVEL_COLORS[node.productiongroup], textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700 }}>{node.productiongroup}</span>
         {childType && (
-          <button
-            onClick={() => onAddChild(node)}
-            style={{ ...S.btn('ghost'), fontSize: '0.68rem', padding: '4px 10px', marginLeft: 'auto' }}
-          >+ Add {childType}</button>
+          <button onClick={() => onAddChild(node)} style={{ ...S.btn('ghost'), fontSize: '0.68rem', padding: '4px 10px', marginLeft: 'auto' }}>
+            + Add {childType}
+          </button>
         )}
       </div>
 
+      {/* ── Core fields ── */}
       {field('productiontitle', 'Name')}
       {field('synopsis', 'Description', { textarea: true, rows: 3 })}
 
+      {/* ── Title-only fields ── */}
       {node.productiongroup === 'TITLE' && <>
+        <div style={{ fontSize: '0.68rem', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '16px 0 10px', paddingTop: '12px', borderTop: `1px solid ${C.border}` }}>
+          Series Visual Identity
+        </div>
         {field('aspectratio', 'Aspect Ratio', { select: true, options: ['9:16 Vertical', '16:9 Horizontal', '1:1 Square', '4:5'] })}
         {field('language', 'Language', { select: true, options: ['English', 'Spanish', 'Portuguese', 'Mandarin', 'Hindi', 'French'] })}
+        {field('visualstyle', 'Visual Style', { textarea: true, rows: 2, placeholder: 'e.g. Neo-noir, high contrast, deep shadows, neon accents' })}
+        {field('moodtone', 'Mood / Tone', { placeholder: 'e.g. Tense, claustrophobic, desperate' })}
+        {field('lensdof', 'Lens / Depth of Field', { placeholder: 'e.g. Shallow DOF, 50mm f/1.4' })}
+        {field('negativeprompt', 'Negative Prompt', { textarea: true, rows: 2, placeholder: 'What to exclude from all video generation' })}
       </>}
 
+      {/* ── Arc fields ── */}
+      {node.productiongroup === 'ARC' && <>
+        <div style={{ fontSize: '0.68rem', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '16px 0 10px', paddingTop: '12px', borderTop: `1px solid ${C.border}` }}>
+          Arc Visual Style
+        </div>
+        {inheritableField('visualstyle', 'Visual Style', { textarea: true, rows: 2 })}
+        {inheritableField('moodtone', 'Mood / Tone')}
+        {inheritableField('lensdof', 'Lens / Depth of Field')}
+        {field('negativeprompt', 'Negative Prompt (adds to Title)', { textarea: true, rows: 2, placeholder: 'Additional exclusions for this arc' })}
+      </>}
+
+      {/* ── Act fields ── */}
+      {node.productiongroup === 'ACT' && <>
+        <div style={{ fontSize: '0.68rem', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '16px 0 10px', paddingTop: '12px', borderTop: `1px solid ${C.border}` }}>
+          Act Visual Style
+        </div>
+        {inheritableField('visualstyle', 'Visual Style', { textarea: true, rows: 2 })}
+        {inheritableField('moodtone', 'Mood / Tone')}
+        {field('negativeprompt', 'Negative Prompt (adds up chain)', { textarea: true, rows: 2 })}
+      </>}
+
+      {/* ── Episode fields ── */}
       {node.productiongroup === 'EPISODE' && <>
         {field('episodenumber', 'Episode #')}
         {field('logline', 'Logline', { textarea: true, rows: 2 })}
         {field('cliffhanger', 'Cliffhanger', { textarea: true, rows: 2 })}
         {field('targetruntime', 'Target Runtime (sec)')}
+        <div style={{ fontSize: '0.68rem', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '16px 0 10px', paddingTop: '12px', borderTop: `1px solid ${C.border}` }}>
+          Episode Visual Style
+        </div>
+        {inheritableField('visualstyle', 'Visual Style', { textarea: true, rows: 2 })}
+        {inheritableField('moodtone', 'Mood / Tone')}
+        {inheritableField('lensdof', 'Lens / Depth of Field')}
+        {inheritableField('referenceimageflag', 'Use Reference Images (Image-to-Video)', { select: true, options: ['true','false'] })}
+        {field('negativeprompt', 'Negative Prompt (adds up chain)', { textarea: true, rows: 2 })}
       </>}
 
+      {/* ── Shot fields ── */}
       {node.productiongroup === 'SHOT' && <>
         {field('shotlength', 'Length (sec)')}
-        {field('cameraangle', 'Camera Angle')}
+        {field('cameraangle', 'Camera Angle', { placeholder: 'e.g. Medium Two Shot, Close-Up, Wide Establishing' })}
+        {field('cameramovement', 'Camera Movement', { placeholder: 'e.g. Slow dolly in, handheld tracking, static' })}
+        {field('subjectaction', 'Subject Action', { placeholder: 'e.g. Raises sword, turns to camera, breaks into tears' })}
+        {inheritableField('moodtone', 'Mood / Tone')}
+        {inheritableField('visualstyle', 'Visual Style')}
+        {inheritableField('lensdof', 'Lens / Depth of Field')}
+        {inheritableField('referenceimageflag', 'Use Reference Images', { select: true, options: ['true','false'] })}
+        {/* Resolved negative prompts — read-only combined view */}
+        {resolvedNeg && (
+          <div style={{ marginBottom: '14px' }}>
+            <label style={{ display: 'block', fontSize: '0.68rem', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '5px' }}>
+              Negative Prompt (resolved)
+            </label>
+            <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '8px 10px', fontSize: '0.75rem', color: C.muted, fontFamily: 'monospace' }}>
+              {resolvedNeg}
+            </div>
+          </div>
+        )}
+        {field('negativeprompt', 'Negative Prompt (shot-specific additions)', { textarea: true, rows: 2 })}
         {field('lighting', 'Lighting')}
         {field('prompt', 'Veo Prompt', { textarea: true, rows: 5 })}
         {field('script', 'Script / Dialog', { textarea: true, rows: 4 })}
         {field('notes', 'Notes', { textarea: true, rows: 2 })}
       </>}
 
-      {(node.productiongroup === 'ARC' || node.productiongroup === 'ACT') && <>
-        {field('synopsis', 'Summary', { textarea: true, rows: 4 })}
-      </>}
+      {/* ── Status fields ── */}
+      <div style={{ marginTop: '16px', paddingTop: '12px', borderTop: `1px solid ${C.border}` }}>
+        {field('productionstatus', 'Stage', { select: true, options: ['Development', 'Pre-Production', 'Production', 'Post-Production', 'Distribution', 'Complete'] })}
+        {field('activestatus', 'Status', { select: true, options: ['A', 'I', 'H'] })}
+      </div>
 
-      {field('productionstatus', 'Stage', { select: true, options: ['Development', 'Pre-Production', 'Production', 'Post-Production', 'Distribution', 'Complete'] })}
-      {field('activestatus', 'Status', { select: true, options: ['A', 'I', 'H'] })}
+      {/* ── Asset panel (Episode + Shot) ── */}
+      {isEpisodeOrShot && <AssetPanel />}
 
       <div style={{ display: 'flex', gap: '8px', marginTop: '20px', paddingTop: '16px', borderTop: `1px solid ${C.border}` }}>
         <button style={S.btn('primary')} onClick={() => onSave(form)}>Save Changes</button>
@@ -443,6 +813,7 @@ function NodeDetailPanel({ node, onSave, onAddChild }) {
     </div>
   )
 }
+
 
 // ── AI Generation helpers ─────────────────────────────────────
 
@@ -1418,6 +1789,7 @@ export default function Development() {
               node={selectedNode}
               onSave={handleSave}
               onAddChild={handleAddChild}
+              allNodes={allNodes}
             />
           </div>
         </div>
