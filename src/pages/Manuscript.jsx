@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import * as r2 from '../lib/r2-client'
 import ScoringRunner from '../components/ScoringRunner'
+import ProductionReadinessReport from '../components/ProductionReadinessReport'
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
 const GOLD    = '#C9924A'
@@ -702,7 +703,10 @@ function TitleDetailView({ title, onBack, onDelete, onRefresh, userId, nvData })
         )}
 
         {activeStep==='scoring'&&(
-          <ScoringRunner title={{ ...title,excerpt:form.excerpt,summary:form.summary,generated_extract:form.generatedExtract,_fullText:form._fullText }} onScored={()=>{if(onRefresh)onRefresh()}}/>
+          <div>
+            <ScoringRunner title={{ ...title,excerpt:form.excerpt,summary:form.summary,generated_extract:form.generatedExtract,_fullText:form._fullText }} onScored={()=>{if(onRefresh)onRefresh()}}/>
+            <ProductionReadinessReport title={title} />
+          </div>
         )}
       </div>
     </div>
