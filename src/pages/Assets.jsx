@@ -515,6 +515,36 @@ function InstanceForm({ data, onChange, assetMeta, locked, onSaveReminder }) {
           style={{ background:locked?'rgba(255,255,255,0.03)':'rgba(201,146,74,0.1)', border:`1px solid rgba(201,146,74,0.25)`, color:locked?MUTED:GOLD, padding:'8px 16px', cursor:locked?'default':'pointer', fontFamily:'DM Sans, sans-serif', fontSize:'0.72rem', letterSpacing:'0.08em', textTransform:'uppercase', marginBottom:'10px' }}>
           Generate Image Prompt
         </button>
+
+        {/* AI Generated Prompt — read-only original */}
+        {data.aigeneratedprompt && (
+          <div style={{ marginBottom:'14px' }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'5px' }}>
+              <div style={lbl}>AI Generated Prompt</div>
+              {data.aigeneratedpromptdate && (
+                <span style={{ fontSize:'0.62rem', color:'#6A6560' }}>
+                  {new Date(data.aigeneratedpromptdate).toLocaleString()}
+                </span>
+              )}
+            </div>
+            <textarea
+              readOnly
+              value={data.aigeneratedprompt || ''}
+              style={{...txt, minHeight:'80px', fontFamily:'monospace', fontSize:'0.72rem', opacity:0.6, cursor:'default', resize:'vertical'}}
+            />
+            <button
+              onClick={() => {
+                if (data.prompt && data.prompt !== data.aigeneratedprompt) {
+                  if (!window.confirm('This will overwrite your edited Prompt with the AI Generated Prompt. Continue?')) return
+                }
+                onChange('prompt', data.aigeneratedprompt)
+              }}
+              style={{ background:'transparent', border:'1px solid rgba(201,146,74,0.25)', color:'#C9924A', padding:'5px 12px', cursor:'pointer', fontFamily:'DM Sans, sans-serif', fontSize:'0.68rem', letterSpacing:'0.08em', textTransform:'uppercase', marginTop:'4px' }}>
+              ↓ Copy to Prompt
+            </button>
+          </div>
+        )}
+
         <div style={lbl}>Prompt</div>
         <textarea {...f('prompt')} style={{...txt,minHeight:'100px',fontFamily:'monospace',fontSize:'0.75rem'}} placeholder="AI generation prompt..." />
         <ImageCreationPanel prompt={data.prompt} locked={locked} isSound={isSound} onFinalSelected={(url,remind)=>{ onChange('finalimage',url); remind&&onSaveReminder&&onSaveReminder() }} />

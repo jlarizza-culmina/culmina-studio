@@ -980,13 +980,15 @@ async function writeAssetsToDb(titleId, assetsJson) {
         .from('assetinstances')
         .insert([{
           assetid:              assetId,
-          instancename:         inst.instancename,
-          clothingdescription:  inst.clothingdescription || null,
-          prompt:               inst.prompt || null,
-          description:          inst.prompt || null,   // mirror prompt into description
-          voiceprompt:          inst.voiceprompt || null,
-          activestatus:         'A',
-          sortorder:            instSort++,
+          instancename:           inst.instancename,
+          clothingdescription:    inst.clothingdescription || null,
+          prompt:                 inst.prompt || null,
+          description:            inst.prompt || null,
+          aigeneratedprompt:      inst.prompt || null,
+          aigeneratedpromptdate:  inst.prompt ? new Date().toISOString() : null,
+          voiceprompt:            inst.voiceprompt || null,
+          activestatus:           'A',
+          sortorder:              instSort++,
         }])
       if (instErr) throw new Error(`Instance insert failed (${inst.instancename}): ${instErr.message}`)
     }
