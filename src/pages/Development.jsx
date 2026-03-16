@@ -347,8 +347,6 @@ function Modal({ title, content, onClose, biblePreview, onConfirmBible, bibleWri
 }
 
 // ── Inheritance resolution ───────────────────────────────────
-// Walks up the node's ancestor chain (passed as ancestorMap) to find
-// the nearest non-null value for a field. Returns { value, sourceGroup }.
 function resolveInherited(key, node, allNodes) {
   const map = {}
   allNodes.forEach(n => { map[n.productionid] = n })
@@ -363,7 +361,6 @@ function resolveInherited(key, node, allNodes) {
   return { value: null, sourceGroup: null, sourceId: null }
 }
 
-// Resolve additive negative prompts from root down to node
 function resolveNegativePrompts(node, allNodes) {
   const map = {}
   allNodes.forEach(n => { map[n.productionid] = n })
@@ -381,18 +378,34 @@ const LEVEL_BADGE_COLORS = {
   EPISODE: '#4A9C7A', SHOT: '#C87A4A',
 }
 
-// Detail view for a selected node
+// ── NodeDetailPanel ───────────────────────────────────────────
 function NodeDetailPanel({ node, onSave, onAddChild, allNodes }) {
-  const [form,          setForm]          = useState({})
-  const [shotAssets,    setShotAssets]    = useState([])   // production_assets for this shot
-  const [episodeAssets, setEpisodeAssets] = useState([])   // production_assets for parent episode
-  const [availAssets,   setAvailAssets]   = useState([])   // all assets for this title
-  const [assetTab,      setAssetTab]      = useState('cast') // 'cast' | 'sets' | 'props' | 'other'
-  const [loadingAssets, setLoadingAssets] = useState(false)
+  const [form,            setForm]            = useState({})
+  const [shotAssets,      setShotAssets]      = useState([])
+  const [episodeAssets,   setEpisodeAssets]   = useState([])
+  const [availAssets,     setAvailAssets]     = useState([])
+  const [assetTab,        setAssetTab]        = useState('cast')
+  const [loadingAssets,   setLoadingAssets]   = useState(false)
+  const [lightingOptions, setLightingOptions] = useState([])
+  const [cameraOptions,   setCameraOptions]   = useState([])
+  const [aiModelOptions,  setAiModelOptions]  = useState([])
+  const [genPromptLoading,setGenPromptLoading]= useState(false)
+  const [refImages,       setRefImages]       = useState([])  // uploaded reference image URLs
+
+  // Load lookup tables once
+  useEffect(() => {
+    supabase.from('lighting').select('lightingid,name,mood,promptsnippet,sortorder').eq('activestatus','A').order('sortorder')
+      .then(({ data }) => setLightingOptions(data || []))
+    supabase.from('camera_movements').select('movementid,name,description,promptsnippet,sortorder').eq('activestatus','A').order('sortorder')
+      .then(({ data }) => setCameraOptions(data || []))
+    supabase.from('nvpair').select('nvvalue,nvname').eq('nvgroup','AIVideoModel').eq('active',true)
+      .then(({ data }) => setAiModelOptions(data || []))
+  }, [])
 
   useEffect(() => {
     if (node) {
       setForm({ ...node })
+      setRefImages(node.referenceimages || [])
       if (node.productiongroup === 'EPISODE' || node.productiongroup === 'SHOT') {
         loadAssetData(node)
       }
@@ -401,41 +414,32 @@ function NodeDetailPanel({ node, onSave, onAddChild, allNodes }) {
 
   const loadAssetData = async (n) => {
     setLoadingAssets(true)
-    // Find title productionid by walking up
     const map = {}
     allNodes.forEach(a => { map[a.productionid] = a })
     let cur = n
     while (cur && cur.productiongroup !== 'TITLE') {
       cur = cur.parentproductionid ? map[cur.parentproductionid] : null
     }
-    const titleId = cur?.productionid || cur?.titleproductionid
+    const titleId = cur?.productionid
 
-    // Load all assets for this title
     if (titleId) {
       const { data: assets } = await supabase
         .from('assets')
         .select('assetid, assetname, name, assettype, characterimportance, assetinstances(instanceid, instancename)')
-        .eq('titleproductionid', titleId)
-        .eq('activestatus', 'A')
-        .order('assetname')
+        .eq('titleproductionid', titleId).eq('activestatus', 'A').order('assetname')
       setAvailAssets(assets || [])
     }
-
-    // Load this node's production_assets
     const { data: nodeAssets } = await supabase
       .from('production_assets')
       .select('*, assets(assetname, name, assettype), assetinstances(instancename)')
-      .eq('productionid', n.productionid)
-      .eq('activestatus', 'A')
+      .eq('productionid', n.productionid).eq('activestatus', 'A')
     setShotAssets(nodeAssets || [])
 
-    // If shot, also load parent episode assets
     if (n.productiongroup === 'SHOT' && n.parentproductionid) {
       const { data: epAssets } = await supabase
         .from('production_assets')
         .select('*, assets(assetname, name, assettype), assetinstances(instancename)')
-        .eq('productionid', n.parentproductionid)
-        .eq('activestatus', 'A')
+        .eq('productionid', n.parentproductionid).eq('activestatus', 'A')
       setEpisodeAssets(epAssets || [])
     } else {
       setEpisodeAssets([])
@@ -444,42 +448,32 @@ function NodeDetailPanel({ node, onSave, onAddChild, allNodes }) {
   }
 
   const toggleShotAsset = async (epAsset, included) => {
-    // Check if override already exists
     const existing = shotAssets.find(s =>
       s.assetid === epAsset.assetid &&
       (s.instanceid === epAsset.instanceid || (!s.instanceid && !epAsset.instanceid))
     )
     if (existing) {
       if (existing.included === included) {
-        // Remove override — delete the shot-level row
         await supabase.from('production_assets').delete().eq('id', existing.id)
       } else {
         await supabase.from('production_assets').update({ included }).eq('id', existing.id)
       }
     } else {
       await supabase.from('production_assets').insert([{
-        productionid: node.productionid,
-        assetid:      epAsset.assetid,
-        instanceid:   epAsset.instanceid || null,
-        assetlevel:   'SHOT',
-        included,
-        activestatus: 'A',
+        productionid: node.productionid, assetid: epAsset.assetid,
+        instanceid: epAsset.instanceid || null, assetlevel: 'SHOT', included, activestatus: 'A',
       }])
     }
     await loadAssetData(node)
   }
 
   const addEpisodeAsset = async (assetid, instanceid) => {
-    const existing = (node.productiongroup === 'SHOT' ? shotAssets : shotAssets)
-      .find(a => a.assetid === assetid && a.instanceid === (instanceid || null))
+    const existing = shotAssets.find(a => a.assetid === assetid && a.instanceid === (instanceid || null))
     if (existing) return
     await supabase.from('production_assets').insert([{
-      productionid: node.productionid,
-      assetid,
-      instanceid:   instanceid || null,
-      assetlevel:   node.productiongroup,
-      included:     true,
-      activestatus: 'A',
+      productionid: node.productionid, assetid,
+      instanceid: instanceid || null, assetlevel: node.productiongroup,
+      included: true, activestatus: 'A',
     }])
     await loadAssetData(node)
   }
@@ -487,6 +481,68 @@ function NodeDetailPanel({ node, onSave, onAddChild, allNodes }) {
   const removeAsset = async (paId) => {
     await supabase.from('production_assets').update({ activestatus: 'I' }).eq('id', paId)
     await loadAssetData(node)
+  }
+
+  // Generate prompt via Claude
+  const generatePrompt = async () => {
+    setGenPromptLoading(true)
+    try {
+      const resolvedModel = resolveInherited('aimodel', node, allNodes).value || 'Veo 3.1'
+      const resolvedMood  = resolveInherited('moodtone', node, allNodes).value || ''
+      const resolvedStyle = resolveInherited('visualstyle', node, allNodes).value || ''
+      const resolvedLens  = resolveInherited('lensdof', node, allNodes).value || ''
+      const resolvedNegFull = resolveNegativePrompts(node, allNodes)
+      const lighting = lightingOptions.find(l => l.lightingid === form.lightingid)
+      const movement = cameraOptions.find(m => m.movementid === form.movementid)
+      // Build asset context from episode/shot assets
+      const assetContext = (node.productiongroup === 'SHOT' ? episodeAssets : shotAssets)
+        .filter(a => a.included !== false)
+        .map(a => `${a.assets?.assetname || a.assets?.name}${a.assetinstances?.instancename ? ` (${a.assetinstances.instancename})` : ''}`)
+        .join(', ')
+
+      const systemPrompt = `You are Culmina AI Drama Studio's prompt engineer for ${resolvedModel} video generation.
+Generate a single, production-ready video generation prompt. Follow the platform's optimal format:
+[camera movement]: [establishing scene]. [subject action]. [additional cinematic details].
+Be specific, visual, and cinematic. Under 150 words. No preamble, no explanation — just the prompt.`
+
+      const userPrompt = `Shot: ${form.productiontitle || 'Untitled'}
+Script/Dialog: ${form.script || 'None'}
+Camera Angle: ${form.cameraangle || 'Not specified'}
+Camera Movement: ${movement ? movement.name + ' — ' + (movement.promptsnippet || '') : form.cameramovement || 'Not specified'}
+Subject Action: ${form.subjectaction || 'Not specified'}
+Lighting: ${lighting ? lighting.name + ' (' + (lighting.promptsnippet || '') + ')' : form.lighting || 'Not specified'}
+Mood/Tone: ${resolvedMood}
+Visual Style: ${resolvedStyle}
+Lens/DOF: ${resolvedLens}
+Assets in shot: ${assetContext || 'Not specified'}
+Negative prompt: ${resolvedNegFull || 'None'}
+Notes: ${form.notes || 'None'}
+Target model: ${resolvedModel}`
+
+      const res = await fetch('/api/score', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 400,
+          messages: [
+            { role: 'user', content: systemPrompt + '\n\n' + userPrompt }
+          ],
+        }),
+      })
+      const data = await res.json()
+      const generated = data.content?.map(b => b.text || '').join('') || ''
+      const now = new Date().toISOString()
+      setForm(f => ({
+        ...f,
+        aigeneratedprompt: generated,
+        aigeneratedpromptdate: now,
+        prompt: generated,  // also pre-fill editable prompt
+      }))
+    } catch (e) {
+      alert('Prompt generation failed: ' + e.message)
+    }
+    setGenPromptLoading(false)
   }
 
   if (!node) return (
@@ -497,16 +553,10 @@ function NodeDetailPanel({ node, onSave, onAddChild, allNodes }) {
 
   // ── Inherited field renderer ──────────────────────────────
   const inheritableField = (key, label, opts = {}) => {
-    const isShot = node.productiongroup === 'SHOT'
-    const isShotOnly = opts.shotOnly
     const resolved = resolveInherited(key, node, allNodes)
-    const isOverriding = form[key] && form[key] !== '' &&
-      resolved.sourceId !== node.productionid &&
-      resolved.value === form[key]
-    const inheritedFrom = resolved.sourceGroup && resolved.sourceId !== node.productionid
-      ? resolved.sourceGroup : null
+    const inheritedFrom = resolved.sourceGroup && resolved.sourceId !== node.productionid ? resolved.sourceGroup : null
     const placeholder = inheritedFrom
-      ? `↑ ${inheritedFrom}: ${(resolved.value || '').slice(0, 50)}${resolved.value?.length > 50 ? '…' : ''}`
+      ? `↑ ${inheritedFrom}: ${(resolved.value || '').slice(0, 60)}${resolved.value?.length > 60 ? '…' : ''}`
       : (opts.placeholder || '')
 
     return (
@@ -514,86 +564,229 @@ function NodeDetailPanel({ node, onSave, onAddChild, allNodes }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '5px' }}>
           <label style={{ fontSize: '0.68rem', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</label>
           {inheritedFrom && !form[key] && (
-            <span style={{ fontSize: '0.6rem', background: `${LEVEL_BADGE_COLORS[inheritedFrom]}22`, color: LEVEL_BADGE_COLORS[inheritedFrom], padding: '1px 6px', borderRadius: '3px', letterSpacing: '0.06em' }}>
+            <span style={{ fontSize: '0.6rem', background: `${LEVEL_BADGE_COLORS[inheritedFrom]}22`, color: LEVEL_BADGE_COLORS[inheritedFrom], padding: '1px 6px', borderRadius: '3px' }}>
               ↑ {inheritedFrom}
             </span>
           )}
           {form[key] && inheritedFrom && (
-            <span style={{ fontSize: '0.6rem', background: 'rgba(74,156,122,0.15)', color: C.green, padding: '1px 6px', borderRadius: '3px' }}>
-              OVERRIDDEN
-            </span>
+            <span style={{ fontSize: '0.6rem', background: 'rgba(74,156,122,0.15)', color: C.green, padding: '1px 6px', borderRadius: '3px' }}>OVERRIDDEN</span>
           )}
           {form[key] && inheritedFrom && (
-            <button
-              onClick={() => setForm(f => ({ ...f, [key]: '' }))}
-              style={{ fontSize: '0.58rem', color: C.muted, background: 'none', border: 'none', cursor: 'pointer', marginLeft: 'auto', padding: '0 4px' }}
-            >↩ Revert</button>
+            <button onClick={() => setForm(f => ({ ...f, [key]: '' }))}
+              style={{ fontSize: '0.58rem', color: C.muted, background: 'none', border: 'none', cursor: 'pointer', marginLeft: 'auto', padding: '0 4px' }}>↩ Revert</button>
           )}
         </div>
-        {opts.textarea ? (
-          <textarea
-            value={form[key] || ''}
-            onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-            placeholder={placeholder}
-            rows={opts.rows || 3}
-            style={{ width: '100%', background: C.dim, border: `1px solid ${form[key] ? C.green + '44' : C.border}`, borderRadius: '6px', padding: '8px 10px', color: C.cream, fontSize: '0.82rem', resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }}
-          />
-        ) : opts.select ? (
-          <select
-            value={form[key] || ''}
-            onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-            style={{ width: '100%', background: C.dim, border: `1px solid ${form[key] ? C.green + '44' : C.border}`, borderRadius: '6px', padding: '8px 10px', color: form[key] ? C.cream : C.muted, fontSize: '0.82rem' }}
-          >
+        {opts.select ? (
+          <select value={form[key] || ''} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+            style={{ width: '100%', background: C.dim, border: `1px solid ${form[key] ? C.green + '44' : C.border}`, borderRadius: '6px', padding: '8px 10px', color: form[key] ? C.cream : C.muted, fontSize: '0.82rem' }}>
             <option value="">{placeholder || '— Select —'}</option>
-            {opts.options.map(o => <option key={o} value={o}>{o}</option>)}
+            {opts.options.map(o => <option key={o.v || o} value={o.v || o}>{o.l || o}</option>)}
           </select>
+        ) : opts.textarea ? (
+          <textarea value={form[key] || ''} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+            placeholder={placeholder} rows={opts.rows || 2}
+            style={{ width: '100%', background: C.dim, border: `1px solid ${form[key] ? C.green + '44' : C.border}`, borderRadius: '6px', padding: '8px 10px', color: C.cream, fontSize: '0.82rem', resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }} />
         ) : (
-          <input
-            type="text"
-            value={form[key] || ''}
-            onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+          <input type="text" value={form[key] || ''} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
             placeholder={placeholder}
-            style={{ width: '100%', background: C.dim, border: `1px solid ${form[key] ? C.green + '44' : C.border}`, borderRadius: '6px', padding: '8px 10px', color: C.cream, fontSize: '0.82rem', boxSizing: 'border-box' }}
-          />
+            style={{ width: '100%', background: C.dim, border: `1px solid ${form[key] ? C.green + '44' : C.border}`, borderRadius: '6px', padding: '8px 10px', color: C.cream, fontSize: '0.82rem', boxSizing: 'border-box' }} />
         )}
       </div>
     )
   }
 
-  // ── Standard field (non-inheritable) ─────────────────────
+  // ── Standard field ────────────────────────────────────────
   const field = (key, label, opts = {}) => (
     <div style={{ marginBottom: '14px' }} key={key}>
       <label style={{ display: 'block', fontSize: '0.68rem', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '5px' }}>{label}</label>
       {opts.textarea ? (
         <textarea value={form[key] || ''} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-          rows={opts.rows || 3}
+          placeholder={opts.placeholder || ''} rows={opts.rows || 3}
           style={{ width: '100%', background: C.dim, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '8px 10px', color: C.cream, fontSize: '0.82rem', resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }} />
       ) : opts.select ? (
         <select value={form[key] || ''} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
           style={{ width: '100%', background: C.dim, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '8px 10px', color: C.cream, fontSize: '0.82rem' }}>
           <option value="">— Select —</option>
-          {opts.options.map(o => <option key={o} value={o}>{o}</option>)}
+          {opts.options.map(o => <option key={o.v || o} value={o.v || o}>{o.l || o}</option>)}
         </select>
       ) : (
         <input type="text" value={form[key] || ''} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+          placeholder={opts.placeholder || ''}
           style={{ width: '100%', background: C.dim, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '8px 10px', color: C.cream, fontSize: '0.82rem', boxSizing: 'border-box' }} />
       )}
     </div>
   )
 
-  // ── Asset panel (Episode + Shot) ──────────────────────────
+  // ── Lighting field with mood suggestion ───────────────────
+  const LightingField = () => {
+    const selected = lightingOptions.find(l => l.lightingid === (form.lightingid ? Number(form.lightingid) : null))
+    return (
+      <div style={{ marginBottom: '14px' }}>
+        <label style={{ display: 'block', fontSize: '0.68rem', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '5px' }}>Lighting</label>
+        <select
+          value={form.lightingid || ''}
+          onChange={e => {
+            const lid = e.target.value ? Number(e.target.value) : null
+            const chosen = lightingOptions.find(l => l.lightingid === lid)
+            setForm(f => ({ ...f, lightingid: lid }))
+            // Suggest mood if not already set
+            if (chosen?.mood && !form.moodtone) {
+              setForm(f => ({ ...f, lightingid: lid, moodtone: chosen.mood }))
+            }
+          }}
+          style={{ width: '100%', background: C.dim, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '8px 10px', color: C.cream, fontSize: '0.82rem' }}
+        >
+          <option value="">— Select lighting —</option>
+          {lightingOptions.map(l => <option key={l.lightingid} value={l.lightingid}>{l.name}</option>)}
+        </select>
+        {selected && (
+          <div style={{ marginTop: '6px', padding: '8px 10px', background: C.panel, borderRadius: '6px', border: `1px solid ${C.border}` }}>
+            <div style={{ fontSize: '0.68rem', color: C.gold, marginBottom: '2px' }}>MOOD: {selected.mood}</div>
+            <div style={{ fontSize: '0.68rem', color: C.muted }}>{selected.promptsnippet}</div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // ── Camera movement field with description ────────────────
+  const CameraMovementField = () => {
+    const selected = cameraOptions.find(m => m.movementid === (form.movementid ? Number(form.movementid) : null))
+    return (
+      <div style={{ marginBottom: '14px' }}>
+        <label style={{ display: 'block', fontSize: '0.68rem', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '5px' }}>Camera Movement</label>
+        <select
+          value={form.movementid || ''}
+          onChange={e => setForm(f => ({ ...f, movementid: e.target.value ? Number(e.target.value) : null }))}
+          style={{ width: '100%', background: C.dim, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '8px 10px', color: C.cream, fontSize: '0.82rem' }}
+        >
+          <option value="">— Select movement —</option>
+          {cameraOptions.map(m => <option key={m.movementid} value={m.movementid}>{m.name}</option>)}
+        </select>
+        {selected && (
+          <div style={{ marginTop: '6px', padding: '6px 10px', background: C.panel, borderRadius: '6px', border: `1px solid ${C.border}` }}>
+            <div style={{ fontSize: '0.68rem', color: C.muted }}>{selected.description}</div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // ── AI Model field (inheritable) ──────────────────────────
+  const AiModelField = () => {
+    const resolved = resolveInherited('aimodel', node, allNodes)
+    const inheritedFrom = resolved.sourceGroup && resolved.sourceId !== node.productionid ? resolved.sourceGroup : null
+    return (
+      <div style={{ marginBottom: '14px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '5px' }}>
+          <label style={{ fontSize: '0.68rem', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>AI Model</label>
+          {inheritedFrom && !form.aimodel && (
+            <span style={{ fontSize: '0.6rem', background: `${LEVEL_BADGE_COLORS[inheritedFrom]}22`, color: LEVEL_BADGE_COLORS[inheritedFrom], padding: '1px 6px', borderRadius: '3px' }}>
+              ↑ {inheritedFrom}: {resolved.value}
+            </span>
+          )}
+          {form.aimodel && inheritedFrom && (
+            <span style={{ fontSize: '0.6rem', background: 'rgba(74,156,122,0.15)', color: C.green, padding: '1px 6px', borderRadius: '3px' }}>OVERRIDDEN</span>
+          )}
+          {form.aimodel && inheritedFrom && (
+            <button onClick={() => setForm(f => ({ ...f, aimodel: '' }))}
+              style={{ fontSize: '0.58rem', color: C.muted, background: 'none', border: 'none', cursor: 'pointer', marginLeft: 'auto' }}>↩ Revert</button>
+          )}
+        </div>
+        <select
+          value={form.aimodel || ''}
+          onChange={e => setForm(f => ({ ...f, aimodel: e.target.value }))}
+          style={{ width: '100%', background: C.dim, border: `1px solid ${form.aimodel ? C.green + '44' : C.border}`, borderRadius: '6px', padding: '8px 10px', color: form.aimodel ? C.cream : C.muted, fontSize: '0.82rem' }}
+        >
+          <option value="">{inheritedFrom ? `↑ ${inheritedFrom}: ${resolved.value || ''}` : '— Select model —'}</option>
+          {aiModelOptions.map(m => <option key={m.nvvalue} value={m.nvvalue}>{m.nvname}</option>)}
+        </select>
+      </div>
+    )
+  }
+
+  // ── Reference Images panel ────────────────────────────────
+  const RefImagesPanel = () => (
+    <div style={{ marginBottom: '14px' }}>
+      <label style={{ display: 'block', fontSize: '0.68rem', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>Reference Images</label>
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
+        {refImages.map((url, i) => (
+          <div key={i} style={{ position: 'relative', width: '72px', height: '72px' }}>
+            <img src={url} alt="" style={{ width: '72px', height: '72px', objectFit: 'cover', borderRadius: '4px', border: `1px solid ${C.border}` }} />
+            <button
+              onClick={() => {
+                const updated = refImages.filter((_, idx) => idx !== i)
+                setRefImages(updated)
+                setForm(f => ({ ...f, referenceimages: updated }))
+              }}
+              style={{ position: 'absolute', top: '2px', right: '2px', background: 'rgba(0,0,0,0.7)', border: 'none', color: C.cream, fontSize: '0.6rem', cursor: 'pointer', borderRadius: '2px', padding: '1px 4px' }}>✕</button>
+          </div>
+        ))}
+        <label style={{
+          width: '72px', height: '72px', border: `1px dashed ${C.border}`, borderRadius: '4px',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          cursor: 'pointer', fontSize: '1.2rem', color: C.muted,
+        }}>
+          +
+          <input type="file" accept="image/*" multiple style={{ display: 'none' }}
+            onChange={async e => {
+              const files = Array.from(e.target.files || [])
+              // Convert to base64 data URLs for preview (R2 upload would happen on save)
+              const newUrls = await Promise.all(files.map(f => new Promise(res => {
+                const reader = new FileReader()
+                reader.onload = ev => res(ev.target.result)
+                reader.readAsDataURL(f)
+              })))
+              const updated = [...refImages, ...newUrls]
+              setRefImages(updated)
+              setForm(f => ({ ...f, referenceimages: updated }))
+            }} />
+        </label>
+      </div>
+      <div style={{ fontSize: '0.65rem', color: C.muted }}>Upload character reference images to use as Veo/Runway input frames</div>
+    </div>
+  )
+
+  // ── AI Generated Prompt box ───────────────────────────────
+  const AiGeneratedPromptBox = () => {
+    if (!form.aigeneratedprompt) return null
+    return (
+      <div style={{ marginBottom: '14px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '5px' }}>
+          <label style={{ fontSize: '0.68rem', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>AI Generated Prompt</label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {form.aigeneratedpromptdate && (
+              <span style={{ fontSize: '0.6rem', color: C.muted }}>{new Date(form.aigeneratedpromptdate).toLocaleString()}</span>
+            )}
+            <button
+              onClick={() => {
+                if (form.prompt && form.prompt !== form.aigeneratedprompt) {
+                  if (!window.confirm('Overwrite your edited Prompt with the AI Generated Prompt?')) return
+                }
+                setForm(f => ({ ...f, prompt: f.aigeneratedprompt }))
+              }}
+              style={{ ...S.btn('ghost'), fontSize: '0.65rem', padding: '3px 8px' }}>↓ Copy to Prompt</button>
+          </div>
+        </div>
+        <textarea
+          readOnly value={form.aigeneratedprompt}
+          style={{ width: '100%', background: C.panel, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '8px 10px', color: C.muted, fontSize: '0.75rem', fontFamily: 'monospace', resize: 'vertical', minHeight: '80px', boxSizing: 'border-box', cursor: 'default' }}
+        />
+      </div>
+    )
+  }
+
+  // ── Asset panel ───────────────────────────────────────────
   const AssetPanel = () => {
     const isShot = node.productiongroup === 'SHOT'
-    const displayAssets = isShot ? episodeAssets : shotAssets
     const ownAssets = shotAssets
 
-    // For shots: episode assets with shot-level override state
     const getShotState = (epAsset) => {
       const override = ownAssets.find(s =>
         s.assetid === epAsset.assetid &&
         (s.instanceid === epAsset.instanceid || (!s.instanceid && !epAsset.instanceid))
       )
-      if (!override) return 'inherited'  // included by default
+      if (!override) return 'inherited'
       return override.included ? 'included' : 'excluded'
     }
 
@@ -608,10 +801,8 @@ function NodeDetailPanel({ node, onSave, onAddChild, allNodes }) {
     return (
       <div style={{ marginTop: '24px', borderTop: `1px solid ${C.border}`, paddingTop: '16px' }}>
         <div style={{ fontSize: '0.68rem', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '10px' }}>
-          {isShot ? 'Shot Assets (inherited from Episode)' : 'Episode Assets'}
+          {isShot ? 'Shot Assets (from Episode)' : 'Episode Assets'}
         </div>
-
-        {/* Asset type tabs */}
         <div style={{ display: 'flex', gap: '4px', marginBottom: '12px', flexWrap: 'wrap' }}>
           {[['cast','👥 Cast'],['sets','🏛 Sets'],['props','📦 Props'],['other','◈ Other']].map(([k,l]) => (
             <button key={k} onClick={() => setAssetTab(k)} style={{
@@ -621,11 +812,7 @@ function NodeDetailPanel({ node, onSave, onAddChild, allNodes }) {
             }}>{l}</button>
           ))}
         </div>
-
-        {loadingAssets ? (
-          <div style={{ fontSize: '0.72rem', color: C.muted }}>Loading…</div>
-        ) : isShot ? (
-          // Shot view: episode assets as checkboxes
+        {loadingAssets ? <div style={{ fontSize: '0.72rem', color: C.muted }}>Loading…</div> : isShot ? (
           <div>
             {filterByTab(episodeAssets).length === 0 && (
               <div style={{ fontSize: '0.72rem', color: C.muted }}>No episode assets in this category</div>
@@ -638,12 +825,14 @@ function NodeDetailPanel({ node, onSave, onAddChild, allNodes }) {
                 <div key={ea.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 0', borderBottom: `1px solid ${C.border}` }}>
                   <div style={{ display: 'flex', gap: '4px' }}>
                     <button onClick={() => toggleShotAsset(ea, true)} style={{
-                      width: '18px', height: '18px', borderRadius: '3px', border: `1px solid ${state !== 'excluded' ? C.green : C.border}`,
+                      width: '18px', height: '18px', borderRadius: '3px',
+                      border: `1px solid ${state !== 'excluded' ? C.green : C.border}`,
                       background: state !== 'excluded' ? 'rgba(74,156,122,0.2)' : 'transparent',
                       cursor: 'pointer', fontSize: '0.6rem', color: C.green,
                     }}>✓</button>
                     <button onClick={() => toggleShotAsset(ea, false)} style={{
-                      width: '18px', height: '18px', borderRadius: '3px', border: `1px solid ${state === 'excluded' ? C.red : C.border}`,
+                      width: '18px', height: '18px', borderRadius: '3px',
+                      border: `1px solid ${state === 'excluded' ? C.red : C.border}`,
                       background: state === 'excluded' ? 'rgba(200,122,74,0.2)' : 'transparent',
                       cursor: 'pointer', fontSize: '0.6rem', color: C.red,
                     }}>✕</button>
@@ -657,7 +846,6 @@ function NodeDetailPanel({ node, onSave, onAddChild, allNodes }) {
             })}
           </div>
         ) : (
-          // Episode view: own assets list + add from available
           <div>
             {filterByTab(ownAssets).map(a => (
               <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 0', borderBottom: `1px solid ${C.border}` }}>
@@ -668,17 +856,13 @@ function NodeDetailPanel({ node, onSave, onAddChild, allNodes }) {
                 <button onClick={() => removeAsset(a.id)} style={{ background: 'none', border: 'none', color: C.muted, cursor: 'pointer', fontSize: '0.7rem' }}>✕</button>
               </div>
             ))}
-            {/* Add asset from title pool */}
             <div style={{ marginTop: '10px' }}>
-              <select
-                onChange={e => {
-                  if (!e.target.value) return
-                  const [aid, iid] = e.target.value.split(':')
-                  addEpisodeAsset(Number(aid), iid ? Number(iid) : null)
-                  e.target.value = ''
-                }}
-                style={{ width: '100%', background: C.dim, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '6px 8px', color: C.muted, fontSize: '0.72rem' }}
-              >
+              <select onChange={e => {
+                if (!e.target.value) return
+                const [aid, iid] = e.target.value.split(':')
+                addEpisodeAsset(Number(aid), iid ? Number(iid) : null)
+                e.target.value = ''
+              }} style={{ width: '100%', background: C.dim, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '6px 8px', color: C.muted, fontSize: '0.72rem' }}>
                 <option value="">+ Add asset…</option>
                 {filterByTab(availAssets.map(a => ({ assets: a, assetid: a.assetid, instanceid: null }))).map(a => {
                   const asset = a.assets
@@ -716,95 +900,109 @@ function NodeDetailPanel({ node, onSave, onAddChild, allNodes }) {
         )}
       </div>
 
-      {/* ── Core fields ── */}
-      {field('productiontitle', 'Name')}
-      {field('synopsis', 'Description', { textarea: true, rows: 3 })}
+      {/* Core fields */}
+      {field('productiontitle', 'Name', { placeholder: 'e.g. The Escape, Arc One: Betrayal' })}
+      {field('synopsis', 'Description', { textarea: true, rows: 3, placeholder: 'Brief description of this node\'s story purpose' })}
 
-      {/* ── Title-only fields ── */}
+      {/* ── TITLE ── */}
       {node.productiongroup === 'TITLE' && <>
-        <div style={{ fontSize: '0.68rem', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '16px 0 10px', paddingTop: '12px', borderTop: `1px solid ${C.border}` }}>
-          Series Visual Identity
-        </div>
-        {field('aspectratio', 'Aspect Ratio', { select: true, options: ['9:16 Vertical', '16:9 Horizontal', '1:1 Square', '4:5'] })}
-        {field('language', 'Language', { select: true, options: ['English', 'Spanish', 'Portuguese', 'Mandarin', 'Hindi', 'French'] })}
-        {field('visualstyle', 'Visual Style', { textarea: true, rows: 2, placeholder: 'e.g. Neo-noir, high contrast, deep shadows, neon accents' })}
-        {field('moodtone', 'Mood / Tone', { placeholder: 'e.g. Tense, claustrophobic, desperate' })}
-        {field('lensdof', 'Lens / Depth of Field', { placeholder: 'e.g. Shallow DOF, 50mm f/1.4' })}
-        {field('negativeprompt', 'Negative Prompt', { textarea: true, rows: 2, placeholder: 'What to exclude from all video generation' })}
+        <div style={{ fontSize: '0.68rem', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '16px 0 10px', paddingTop: '12px', borderTop: `1px solid ${C.border}` }}>Series Visual Identity</div>
+        {field('aspectratio', 'Aspect Ratio', { select: true, options: [{v:'9:16 Vertical',l:'9:16 Vertical — TikTok/ReelShort'},{v:'16:9 Horizontal',l:'16:9 Horizontal — YouTube/VOD'},{v:'1:1 Square',l:'1:1 Square — Instagram'},{v:'4:5',l:'4:5 — Instagram Feed'}] })}
+        {field('language', 'Language', { select: true, options: ['English','Spanish','Portuguese','Mandarin','Hindi','French','Korean','Japanese'] })}
+        <AiModelField />
+        {field('visualstyle', 'Visual Style', { textarea: true, rows: 2, placeholder: 'e.g. Neo-noir, high contrast, deep shadows, neon accents — think Blade Runner meets Bridgerton' })}
+        {field('moodtone', 'Mood / Tone', { placeholder: 'e.g. Tense, claustrophobic, desperate. Think Succession meets The Handmaid\'s Tale' })}
+        {field('lensdof', 'Lens / Depth of Field', { placeholder: 'e.g. Shallow DOF 50mm f/1.4 — bokeh backgrounds throughout' })}
+        {field('negativeprompt', 'Negative Prompt', { textarea: true, rows: 2, placeholder: 'e.g. cartoon, anime, CGI, unrealistic lighting, text overlays' })}
       </>}
 
-      {/* ── Arc fields ── */}
+      {/* ── ARC ── */}
       {node.productiongroup === 'ARC' && <>
-        <div style={{ fontSize: '0.68rem', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '16px 0 10px', paddingTop: '12px', borderTop: `1px solid ${C.border}` }}>
-          Arc Visual Style
-        </div>
-        {inheritableField('visualstyle', 'Visual Style', { textarea: true, rows: 2 })}
-        {inheritableField('moodtone', 'Mood / Tone')}
-        {inheritableField('lensdof', 'Lens / Depth of Field')}
-        {field('negativeprompt', 'Negative Prompt (adds to Title)', { textarea: true, rows: 2, placeholder: 'Additional exclusions for this arc' })}
+        <div style={{ fontSize: '0.68rem', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '16px 0 10px', paddingTop: '12px', borderTop: `1px solid ${C.border}` }}>Arc Visual Style</div>
+        <AiModelField />
+        {inheritableField('visualstyle', 'Visual Style', { textarea: true, rows: 2, placeholder: 'Override or specify arc-specific visual direction' })}
+        {inheritableField('moodtone', 'Mood / Tone', { placeholder: 'e.g. Rising tension, fragile hope — override series tone for this arc' })}
+        {inheritableField('lensdof', 'Lens / Depth of Field', { placeholder: 'Override series lens setting for this arc' })}
+        {field('negativeprompt', 'Negative Prompt (adds to Title)', { textarea: true, rows: 2, placeholder: 'Additional exclusions for this arc only' })}
       </>}
 
-      {/* ── Act fields ── */}
+      {/* ── ACT ── */}
       {node.productiongroup === 'ACT' && <>
-        <div style={{ fontSize: '0.68rem', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '16px 0 10px', paddingTop: '12px', borderTop: `1px solid ${C.border}` }}>
-          Act Visual Style
-        </div>
+        <div style={{ fontSize: '0.68rem', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '16px 0 10px', paddingTop: '12px', borderTop: `1px solid ${C.border}` }}>Act Visual Style</div>
+        <AiModelField />
         {inheritableField('visualstyle', 'Visual Style', { textarea: true, rows: 2 })}
-        {inheritableField('moodtone', 'Mood / Tone')}
+        {inheritableField('moodtone', 'Mood / Tone', { placeholder: 'e.g. Desperate, cornered — act-level mood shift' })}
         {field('negativeprompt', 'Negative Prompt (adds up chain)', { textarea: true, rows: 2 })}
       </>}
 
-      {/* ── Episode fields ── */}
+      {/* ── EPISODE ── */}
       {node.productiongroup === 'EPISODE' && <>
-        {field('episodenumber', 'Episode #')}
-        {field('logline', 'Logline', { textarea: true, rows: 2 })}
-        {field('cliffhanger', 'Cliffhanger', { textarea: true, rows: 2 })}
-        {field('targetruntime', 'Target Runtime (sec)')}
-        <div style={{ fontSize: '0.68rem', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '16px 0 10px', paddingTop: '12px', borderTop: `1px solid ${C.border}` }}>
-          Episode Visual Style
-        </div>
+        {field('episodenumber', 'Episode #', { placeholder: 'e.g. 7' })}
+        {field('logline', 'Logline', { textarea: true, rows: 2, placeholder: 'One sentence: who wants what, what stands in the way' })}
+        {field('cliffhanger', 'Cliffhanger', { textarea: true, rows: 2, placeholder: 'The final moment — what makes viewers tap Next Episode immediately' })}
+        {field('targetruntime', 'Target Runtime (sec)', { placeholder: 'e.g. 75' })}
+        <div style={{ fontSize: '0.68rem', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '16px 0 10px', paddingTop: '12px', borderTop: `1px solid ${C.border}` }}>Episode Visual Style</div>
+        <AiModelField />
         {inheritableField('visualstyle', 'Visual Style', { textarea: true, rows: 2 })}
-        {inheritableField('moodtone', 'Mood / Tone')}
+        {inheritableField('moodtone', 'Mood / Tone', { placeholder: 'e.g. Quiet dread before the storm' })}
         {inheritableField('lensdof', 'Lens / Depth of Field')}
-        {inheritableField('referenceimageflag', 'Use Reference Images (Image-to-Video)', { select: true, options: ['true','false'] })}
         {field('negativeprompt', 'Negative Prompt (adds up chain)', { textarea: true, rows: 2 })}
       </>}
 
-      {/* ── Shot fields ── */}
+      {/* ── SHOT ── */}
       {node.productiongroup === 'SHOT' && <>
-        {field('shotlength', 'Length (sec)')}
-        {field('cameraangle', 'Camera Angle', { placeholder: 'e.g. Medium Two Shot, Close-Up, Wide Establishing' })}
-        {field('cameramovement', 'Camera Movement', { placeholder: 'e.g. Slow dolly in, handheld tracking, static' })}
-        {field('subjectaction', 'Subject Action', { placeholder: 'e.g. Raises sword, turns to camera, breaks into tears' })}
-        {inheritableField('moodtone', 'Mood / Tone')}
-        {inheritableField('visualstyle', 'Visual Style')}
-        {inheritableField('lensdof', 'Lens / Depth of Field')}
-        {inheritableField('referenceimageflag', 'Use Reference Images', { select: true, options: ['true','false'] })}
-        {/* Resolved negative prompts — read-only combined view */}
+        {field('shotlength', 'Length (sec)', { placeholder: 'e.g. 8' })}
+        {field('cameraangle', 'Camera Angle', { placeholder: 'e.g. Medium Two Shot, Extreme Close-Up, Wide Establishing' })}
+        <CameraMovementField />
+        {field('subjectaction', 'Subject Action', { placeholder: 'e.g. Raises sword slowly, makes eye contact with camera, breaks into tears' })}
+        <AiModelField />
+        {inheritableField('moodtone', 'Mood / Tone', { placeholder: 'Override episode mood for this shot' })}
+        {inheritableField('visualstyle', 'Visual Style', { placeholder: 'Override episode visual style for this shot' })}
+        {inheritableField('lensdof', 'Lens / Depth of Field', { placeholder: 'e.g. Tight 85mm, shallow focus on subject' })}
+        <LightingField />
+
         {resolvedNeg && (
           <div style={{ marginBottom: '14px' }}>
-            <label style={{ display: 'block', fontSize: '0.68rem', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '5px' }}>
-              Negative Prompt (resolved)
-            </label>
-            <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '8px 10px', fontSize: '0.75rem', color: C.muted, fontFamily: 'monospace' }}>
-              {resolvedNeg}
-            </div>
+            <label style={{ display: 'block', fontSize: '0.68rem', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '5px' }}>Negative Prompt (resolved chain)</label>
+            <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '8px 10px', fontSize: '0.72rem', color: C.muted, fontFamily: 'monospace' }}>{resolvedNeg}</div>
           </div>
         )}
-        {field('negativeprompt', 'Negative Prompt (shot-specific additions)', { textarea: true, rows: 2 })}
-        {field('lighting', 'Lighting')}
-        {field('prompt', 'Veo Prompt', { textarea: true, rows: 5 })}
-        {field('script', 'Script / Dialog', { textarea: true, rows: 4 })}
-        {field('notes', 'Notes', { textarea: true, rows: 2 })}
+        {field('negativeprompt', 'Negative Prompt (shot additions)', { textarea: true, rows: 2, placeholder: 'e.g. motion blur, out of focus faces' })}
+
+        {/* Reference images */}
+        <div style={{ marginTop: '8px', paddingTop: '12px', borderTop: `1px solid ${C.border}`, marginBottom: '8px' }}>
+          <RefImagesPanel />
+        </div>
+
+        {/* Script first, then prompt */}
+        {field('script', 'Script / Dialog', { textarea: true, rows: 4, placeholder: 'CHARACTER: "Dialog line here."\nCHARACTER 2: "Response."' })}
+        {field('notes', 'Notes', { textarea: true, rows: 2, placeholder: 'Production notes, continuity flags, director\'s intent' })}
+
+        {/* Generate prompt button */}
+        <div style={{ margin: '16px 0 10px', paddingTop: '12px', borderTop: `1px solid ${C.border}` }}>
+          <button
+            onClick={generatePrompt}
+            disabled={genPromptLoading}
+            style={{ ...S.btn('primary'), opacity: genPromptLoading ? 0.6 : 1, marginBottom: '12px' }}
+          >
+            {genPromptLoading ? <><Spinner /> Generating…</> : '✦ Generate Prompt'}
+          </button>
+        </div>
+
+        {/* AI Generated Prompt (read-only) */}
+        <AiGeneratedPromptBox />
+
+        {/* Editable prompt */}
+        {field('prompt', 'Prompt', { textarea: true, rows: 5, placeholder: 'Final video generation prompt for Veo / Runway. Edit freely — use AI Generated Prompt above to restore.' })}
       </>}
 
-      {/* ── Status fields ── */}
+      {/* Status fields */}
       <div style={{ marginTop: '16px', paddingTop: '12px', borderTop: `1px solid ${C.border}` }}>
-        {field('productionstatus', 'Stage', { select: true, options: ['Development', 'Pre-Production', 'Production', 'Post-Production', 'Distribution', 'Complete'] })}
-        {field('activestatus', 'Status', { select: true, options: ['A', 'I', 'H'] })}
+        {field('productionstatus', 'Stage', { select: true, options: ['Development','Pre-Production','Production','Post-Production','Distribution','Complete'] })}
+        {field('activestatus', 'Status', { select: true, options: [{v:'A',l:'Active'},{v:'I',l:'Inactive'},{v:'H',l:'Hold'}] })}
       </div>
 
-      {/* ── Asset panel (Episode + Shot) ── */}
+      {/* Asset panel */}
       {isEpisodeOrShot && <AssetPanel />}
 
       <div style={{ display: 'flex', gap: '8px', marginTop: '20px', paddingTop: '16px', borderTop: `1px solid ${C.border}` }}>
@@ -812,189 +1010,6 @@ function NodeDetailPanel({ node, onSave, onAddChild, allNodes }) {
       </div>
     </div>
   )
-}
-
-
-// ── AI Generation helpers ─────────────────────────────────────
-
-async function callClaude(prompt, maxTokens = 4000) {
-  const res = await fetch('/api/score', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: maxTokens,
-      messages: [{ role: 'user', content: prompt }],
-    }),
-  })
-  const data = await res.json()
-  return data.content?.map(b => b.text || '').join('') || ''
-}
-
-function buildAssetsPrompt(titleNode) {
-  return `You are Culmina AI Drama Studio's Asset Generator. Return ONLY valid JSON — no markdown, no preamble, no backticks.
-
-Generate a complete asset list for this micro-drama series:
-
-TITLE: ${titleNode.productiontitle}
-DESCRIPTION: ${titleNode.description || '(infer from title)'}
-TONE: ${titleNode.tone || ''}
-SETTING: ${titleNode.settingdescription || ''}
-
-Return this exact JSON structure:
-{
-  "characters": [
-    {
-      "assetname": "Character full name",
-      "assettype": "Person",
-      "characterimportance": "Lead",
-      "speakingrole": true,
-      "sex": "Male",
-      "age": "late 20s",
-      "heightft": 6, "heightin": 1,
-      "weightlbs": 185,
-      "bodyshape": "Athletic",
-      "skintone": "Medium",
-      "ethnicity": "Caucasian",
-      "haircolor": "Dark brown",
-      "hairlength": "Short",
-      "eyecolor": "Green",
-      "scars": "Small scar above left eyebrow",
-      "tattoos": "None",
-      "piercings": "None",
-      "description": "2-3 sentence character description",
-      "instances": [
-        {
-          "instancename": "Hero Portrait",
-          "clothingdescription": "Detailed clothing for this instance",
-          "prompt": "Full detailed Imagen/Midjourney photorealistic cinematic portrait prompt 80+ words",
-          "voiceprompt": "ElevenLabs voice direction: tone, accent, pace, style, emotional quality"
-        }
-      ]
-    }
-  ],
-  "sets": [
-    {
-      "assetname": "Location name",
-      "assettype": "Set",
-      "description": "2 sentence set description",
-      "setdominantcolor": "#hex",
-      "setsecondarycolor": "#hex",
-      "setaccentcolor": "#hex",
-      "instances": [
-        {
-          "instancename": "Day Exterior",
-          "prompt": "Full detailed Imagen/Veo environment reference prompt 80+ words",
-          "voiceprompt": "Ambient audio description or sound design notes"
-        }
-      ]
-    }
-  ]
-}
-
-Requirements:
-- ALL named characters with 2-4 instances each
-- ALL key sets with 1-2 instances each
-- Every prompt must be 80+ words, photorealistic, cinematic
-- Return ONLY the JSON object, nothing else`
-}
-
-function buildSeriesBiblePrompt(titleNode) {
-  return `You are Culmina AI Drama Studio's Series Bible Generator. Return ONLY valid JSON — no markdown, no preamble, no backticks.
-
-Generate a complete Series Bible for this micro-drama production targeting ReelShort and TikTok:
-
-TITLE: ${titleNode.productiontitle}
-DESCRIPTION: ${titleNode.description || '(no description provided — infer from title)'}
-
-Return this exact JSON structure:
-
-{
-  "title": {
-    "overview": "2-3 paragraph series overview",
-    "genre": "e.g. Romantic Thriller, Fantasy Romance",
-    "settingdescription": "e.g. Paris, Dover, London, Calais",
-    "timeperiod": "e.g. September–October 1792",
-    "tone": "e.g. Suspenseful, romantic, witty. Think Bridgerton meets Mission: Impossible.",
-    "aspectratio": "9:16 Vertical",
-    "hook": "1 compelling paragraph hook",
-    "centralconflict": "1-2 paragraph central conflict",
-    "whymicrodrama": "1 paragraph on why it works for micro-drama"
-  },
-  "arcs": [
-    {
-      "name": "Arc name",
-      "description": "Arc description 2-3 sentences",
-      "sets": "Comma-separated key sets/locations",
-      "characters": "Comma-separated main characters and instances",
-      "props": "Comma-separated key props",
-      "acts": [
-        {
-          "actnumber": 1,
-          "name": "Act name",
-          "episoderange": "e.g. Eps 1–5",
-          "summary": "Act summary 2-3 sentences",
-          "sets": "Comma-separated sets",
-          "characters": "Comma-separated characters",
-          "props": "Comma-separated props",
-          "episodes": [
-            {
-              "episodenumber": 1,
-              "name": "Episode name",
-              "summary": "Episode summary 1-2 sentences",
-              "logline": "One-line logline",
-              "cliffhanger": "Episode cliffhanger",
-              "sets": "Comma-separated sets",
-              "characters": "Comma-separated characters",
-              "props": "Comma-separated props"
-            }
-          ]
-        }
-      ]
-    }
-  ]
-}
-
-Requirements:
-- 2–4 Arcs total
-- 3–5 Acts per Arc
-- 50–70 Episodes total spread across all Acts
-- Be specific, dramatic, and production-ready for ReelShort/TikTok micro-drama format
-- Return ONLY the JSON object, nothing else`
-}
-
-function buildProductionGuidePrompt(titleNode) {
-  return `You are Culmina AI Drama Studio's Production Guide Generator. Create an AI Production Guide for:
-
-TITLE: ${titleNode.productiontitle}
-DESCRIPTION: ${titleNode.description || ''}
-
-Generate Episodes 1-5 in full detail:
-
-For each EPISODE:
-## EPISODE [#]: [NAME]
-- Target Runtime: [60-90 seconds]
-- Sets: [list 2-3 sets]
-- Characters/Instances: [list with instance names]
-- Props: [key props]
-
-For each SHOT within the episode (6-8 shots per episode):
-### SHOT [N]: [SHOT NAME]
-- Length: [6-10 sec]
-- Camera Angle: [e.g. Medium Two Shot, Close-Up, Wide Establishing]
-- Lighting: [mood + technical]
-- Set: [one location]
-- Props: [specific props]
-- Characters: [who appears, which instance]
-- Script/Dialog:
-  [CHARACTER]: "[line]"
-  [CHARACTER]: "[line]"
-- Veo Prompt: [Full detailed Veo scene generation prompt, 100+ words, cinematic, specific]
-- Notes: [production notes]
-
-End with a VOICE GENERATION NOTES section for each character covering tone, style, accent for ElevenLabs.
-
-Be highly specific and production-ready.`
 }
 
 // ── Asset Tree (left panel, 2nd tree) ────────────────────────
