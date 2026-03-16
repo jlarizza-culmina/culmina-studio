@@ -695,16 +695,32 @@ async function writeAssetsToDb(titleId, assetsJson) {
   ]
 
   for (const asset of allAssets) {
+    // Derive description from asset.description + first instance prompt
+    const firstPrompt = asset.instances?.[0]?.prompt || ''
+    const fullDescription = [asset.description, firstPrompt].filter(Boolean).join('\n\n')
+
+    // speakingrole: handle both boolean true and string "Yes"/"true"
+    const isSpeaking = asset.speakingrole === true
+      || String(asset.speakingrole).toLowerCase() === 'yes'
+      || String(asset.speakingrole).toLowerCase() === 'true'
+
+    // characterimportance: map from role string if needed
+    const importance = asset.characterimportance
+      || (asset.role === 'Lead' ? 'Lead'
+        : asset.role === 'Antagonist' ? 'Antagonist'
+        : asset.role === 'Supporting' ? 'Supporting' : null)
+
     // Insert asset record
     const { data: assetData, error: assetErr } = await supabase
       .from('assets')
       .insert([{
         assetname:            asset.assetname,
+        name:                 asset.assetname,        // alias column
         assettype:            asset.assettype || 'Character',
         titleproductionid:    titleId,
-        description:          asset.description || '',
-        characterimportance:  asset.characterimportance || null,
-        speakingrole:         asset.speakingrole || false,
+        description:          fullDescription,
+        characterimportance:  importance,
+        speakingrole:         isSpeaking,
         sex:                  asset.sex || null,
         haircolor:            asset.haircolor || null,
         hairlength:           asset.hairlength || null,
@@ -726,7 +742,7 @@ async function writeAssetsToDb(titleId, assetsJson) {
     if (assetErr) throw new Error(`Asset insert failed (${asset.assetname}): ${assetErr.message}`)
     const assetId = assetData.assetid
 
-    // Insert instances
+    // Insert instances — populate description with the instance prompt
     let instSort = 1
     for (const inst of (asset.instances || [])) {
       const { error: instErr } = await supabase
@@ -736,6 +752,7 @@ async function writeAssetsToDb(titleId, assetsJson) {
           instancename:         inst.instancename,
           clothingdescription:  inst.clothingdescription || null,
           prompt:               inst.prompt || null,
+          description:          inst.prompt || null,   // mirror prompt into description
           voiceprompt:          inst.voiceprompt || null,
           activestatus:         'A',
           sortorder:            instSort++,
