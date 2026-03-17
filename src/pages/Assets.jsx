@@ -557,7 +557,66 @@ function InstanceForm({ data, onChange, assetMeta, locked, onSaveReminder }) {
 
       {/* ── Voice & Sound ── */}
 
-      {/* AI Prompt */}
+      {!isSet && !isProp && (
+                <Section title="Voice & Sound">
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px', marginBottom:'10px' }}>
+            <div>
+              <div style={lbl}>Age</div>
+              <input {...f('voiceage')} style={mkInp(locked)} placeholder="e.g. late 20s, mid 50s" />
+            </div>
+            <div>
+              <div style={lbl}>Gender</div>
+              <select {...f('voicegender')} style={mkSel(locked)}>
+                <option value="">— Select —</option>
+                {['Male','Female','Neutral'].map(o=><option key={o}>{o}</option>)}
+              </select>
+            </div>
+            <div>
+              <div style={lbl}>Accent</div>
+              <input {...f('voiceaccent')} style={mkInp(locked)} placeholder="e.g. Eastern European, RP British" />
+            </div>
+            <div>
+              <div style={lbl}>Tone / Timbre</div>
+              <input {...f('voicetone')} style={mkInp(locked)} placeholder="e.g. Gravelly, breathy, crisp" />
+            </div>
+            <div>
+              <div style={lbl}>Pacing</div>
+              <input {...f('voicepacing')} style={mkInp(locked)} placeholder="e.g. Slow and deliberate" />
+            </div>
+            <div>
+              <div style={lbl}>Emotional Range</div>
+              <select {...f('voiceemotionalrange')} style={mkSel(locked)}>
+                <option value="">— Select —</option>
+                {['Wide','Neutral','Narrow'].map(o=><option key={o}>{o}</option>)}
+              </select>
+            </div>
+            <div>
+              <div style={lbl}>Quality Tag</div>
+              <select {...f('voicequalitytag')} style={mkSel(locked)}>
+                <option value="">— Select —</option>
+                <option value="Perfect audio quality">Perfect audio quality</option>
+                <option value="Studio-quality recording">Studio-quality recording</option>
+                <option value="Clear and natural">Clear and natural</option>
+              </select>
+            </div>
+            <div>
+              <div style={lbl}>Stability Mode</div>
+              <select {...f('voicestability')} style={mkSel(locked)}>
+                <option value="">— Select —</option>
+                <option value="Creative">Creative — expressive</option>
+                <option value="Natural">Natural — balanced</option>
+                <option value="Robust">Robust — consistent</option>
+              </select>
+            </div>
+          </div>
+          <div style={{ marginBottom:'10px' }}>
+            <div style={lbl}>Script / Voice Notes</div>
+            <textarea {...f('script')} style={{...mkTxt(locked),minHeight:'60px'}} placeholder="Dialog, voice notes, personality cues, scene context..." />
+          </div>
+        </Section>
+      )}
+
+            {/* AI Prompt */}
       <Section title="AI Prompt" defaultOpen={true}>
 
         {/* Row 1: Image AI Model + Generate Image Prompt button */}
@@ -653,64 +712,7 @@ Return ONLY the prompt, one concise sentence.`}]})})
           </>
         )}
 
-      {!isSet && !isProp && (
-        <Section title="Voice & Sound">
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px', marginBottom:'10px' }}>
-            <div>
-              <div style={lbl}>Age</div>
-              <input {...f('voiceage')} style={mkInp(locked)} placeholder="e.g. late 20s, mid 50s" />
-            </div>
-            <div>
-              <div style={lbl}>Gender</div>
-              <select {...f('voicegender')} style={mkSel(locked)}>
-                <option value="">— Select —</option>
-                {['Male','Female','Neutral'].map(o=><option key={o}>{o}</option>)}
-              </select>
-            </div>
-            <div>
-              <div style={lbl}>Accent</div>
-              <input {...f('voiceaccent')} style={mkInp(locked)} placeholder="e.g. Eastern European, RP British" />
-            </div>
-            <div>
-              <div style={lbl}>Tone / Timbre</div>
-              <input {...f('voicetone')} style={mkInp(locked)} placeholder="e.g. Gravelly, breathy, crisp" />
-            </div>
-            <div>
-              <div style={lbl}>Pacing</div>
-              <input {...f('voicepacing')} style={mkInp(locked)} placeholder="e.g. Slow and deliberate" />
-            </div>
-            <div>
-              <div style={lbl}>Emotional Range</div>
-              <select {...f('voiceemotionalrange')} style={mkSel(locked)}>
-                <option value="">— Select —</option>
-                {['Wide','Neutral','Narrow'].map(o=><option key={o}>{o}</option>)}
-              </select>
-            </div>
-            <div>
-              <div style={lbl}>Quality Tag</div>
-              <select {...f('voicequalitytag')} style={mkSel(locked)}>
-                <option value="">— Select —</option>
-                <option value="Perfect audio quality">Perfect audio quality</option>
-                <option value="Studio-quality recording">Studio-quality recording</option>
-                <option value="Clear and natural">Clear and natural</option>
-              </select>
-            </div>
-            <div>
-              <div style={lbl}>Stability Mode</div>
-              <select {...f('voicestability')} style={mkSel(locked)}>
-                <option value="">— Select —</option>
-                <option value="Creative">Creative — expressive</option>
-                <option value="Natural">Natural — balanced</option>
-                <option value="Robust">Robust — consistent</option>
-              </select>
-            </div>
-          </div>
-          <div style={{ marginBottom:'10px' }}>
-            <div style={lbl}>Script / Voice Notes</div>
-            <textarea {...f('script')} style={{...mkTxt(locked),minHeight:'60px'}} placeholder="Dialog, voice notes, personality cues, scene context..." />
-          </div>
-        </Section>
-      )}
+      {!isSet && !isProp && (      )}
       </Section>
     </div>
   )
