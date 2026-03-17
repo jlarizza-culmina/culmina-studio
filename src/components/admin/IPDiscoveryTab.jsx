@@ -651,10 +651,8 @@ export default function IPDiscoveryTab() {
         productionstatus:  'draft',
         productiongroup:   'TITLE',
         activestatus:      'A',
-        genre:             candidate.genre     ?? null,
+        genre:             candidate.genre      ?? null,
         summary:           candidate.description ?? null,
-        isbn:              candidate.isbn       ?? null,
-        publisher:         candidate.publisher  ?? null,
         createdate:        new Date().toISOString(),
         updatedate:        new Date().toISOString(),
       })
