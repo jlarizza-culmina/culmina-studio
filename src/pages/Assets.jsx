@@ -247,20 +247,17 @@ function ImageCreationPanel({ prompt, locked, isSound, onFinalSelected }) {
   )
 }
 
-function SoundModelSelect({ f, sel, locked }) {
-  const [opts, setOpts] = React.useState([])
-  React.useEffect(() => {
-    import('../lib/supabase').then(({supabase}) => {
-      supabase.from('nvpair').select('nvvalue,nvname').eq('nvgroup','SoundAIModel').eq('active',true)
-        .then(({data}) => setOpts(data||[]))
-    }).catch(() => {
-      setOpts([
-        {nvvalue:'elevenlabs',nvname:'ElevenLabs'},
+function SoundModelSelect({ f, sel }) {
+  const [opts, setOpts] = useState([])
+  useEffect(() => {
+    supabase.from('nvpair').select('nvvalue,nvname')
+      .eq('nvgroup','SoundAIModel').eq('active',true)
+      .then(({data}) => setOpts(data && data.length ? data : [
         {nvvalue:'elevenlabs_v3',nvname:'ElevenLabs v3'},
+        {nvvalue:'elevenlabs_v2',nvname:'ElevenLabs v2'},
         {nvvalue:'openai_tts',nvname:'OpenAI TTS'},
         {nvvalue:'cartesia',nvname:'Cartesia'},
-      ])
-    })
+      ]))
   }, [])
   return (
     <select {...f('soundaimodel')} style={sel}>
