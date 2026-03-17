@@ -712,7 +712,7 @@ Return ONLY the prompt, one concise sentence.`}]})})
           </>
         )}
 
-      {!isSet && !isProp && (      )}
+
       </Section>
     </div>
   )
