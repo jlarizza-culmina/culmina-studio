@@ -81,7 +81,7 @@ async function callClaude(prompt) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       signal: controller.signal,
-      body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 1000, messages: [{ role: 'user', content: prompt }] }),
+      body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 1000, temperature: 0, messages: [{ role: 'user', content: prompt }] }),
     })
     clearTimeout(timeout)
     if (!res.ok) {
@@ -105,11 +105,24 @@ async function callClaude(prompt) {
 }
 
 // ── Prompts (v2.2) ────────────────────────────────────────────
-const BOOK_GEN_PROMPT = (type) =>
-  `IP analyst for micro-drama (60s episodes, ReelShort/DramaBox, women 18-45).
-List 10 ${type === 'contemporary' ? 'contemporary (post-2000) bestselling' : 'public domain (pre-1928)'} novels for micro-drama. Genres: billionaire CEO romance, dark romance, revenge, forbidden love, strong FL, enemies-to-lovers, secret identity, mafia, werewolf.
+const BOOK_GEN_PROMPT = (type) => {
+  const seed = Math.floor(Math.random() * 9000) + 1000
+  const rotations = [
+    'Focus on billionaire CEO romance and secret identity.',
+    'Focus on dark romance, mafia, and forbidden love.',
+    'Focus on enemies-to-lovers, revenge, and strong female lead.',
+    'Focus on werewolf, paranormal romance, and fated mates.',
+    'Focus on contract marriage, fake dating, and second chance romance.',
+    'Focus on royal romance, historical forbidden love, and class divide.',
+    'Focus on office romance, grumpy sunshine, and slow burn.',
+    'Focus on sports romance, rivals to lovers, and redemption arcs.',
+  ]
+  const focus = rotations[seed % rotations.length]
+  return `IP analyst for micro-drama (60s episodes, ReelShort/DramaBox, women 18-45). Seed: ${seed}.
+List 10 DIFFERENT ${type === 'contemporary' ? 'contemporary (post-2000) bestselling' : 'public domain (pre-1928)'} novels for micro-drama. ${focus} Do NOT repeat titles commonly suggested — aim for variety and less obvious picks.
 ONLY raw JSON array. No markdown. No text. Start [ end ]
 [{"title":"X","author":"X","year":2019,"description":"1 sentence plot","genre":"Dark Romance","isbn":"","publisher":""}]`
+}
 
 const SCORE_ONE_PROMPT = (book, modelName) =>
   `Score for micro-drama adaptation (ReelShort/DramaBox, women 18-45, 60s episodes). Model: ${modelName}.
@@ -319,7 +332,7 @@ function CandidateCard({ candidate, index, onPromote }) {
 }
 
 // ── Run History sidebar ───────────────────────────────────────
-function RunHistory({ runs, activeRunId, onSelect, onNewRun }) {
+function RunHistory({ runs, activeRunId, onSelect, onNewRun, onDelete }) {
   return (
     <div style={{ width: 220, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
@@ -343,7 +356,14 @@ function RunHistory({ runs, activeRunId, onSelect, onNewRun }) {
               {strongCount   > 0 && <div style={{ fontSize: 8, color: GREEN, fontWeight: 700 }}>{strongCount} Greenlight</div>}
               {promisingCount > 0 && <div style={{ fontSize: 8, color: GOLD,  fontWeight: 700 }}>{promisingCount} Develop</div>}
             </div>
-            <div style={{ marginTop: 4, fontSize: 8, letterSpacing: 0.8, textTransform: 'uppercase', color: run.status === 'complete' ? GREEN : run.status === 'error' ? RED : GOLD }}>{run.status}</div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
+              <div style={{ fontSize: 8, letterSpacing: 0.8, textTransform: 'uppercase', color: run.status === 'complete' ? GREEN : run.status === 'error' ? RED : GOLD }}>{run.status}</div>
+              <button
+                onClick={e => { e.stopPropagation(); onDelete(run.id) }}
+                style={{ background: 'none', border: 'none', color: CHARCOAL, fontSize: 9, cursor: 'pointer', padding: '0 2px', opacity: 0.6 }}
+                title="Delete run"
+              >✕</button>
+            </div>
           </div>
         )
       })}
@@ -455,6 +475,19 @@ export default function IPDiscoveryTab() {
       .order('started_at', { ascending: false })
       .limit(20)
     if (data) setRuns(data || [])
+  }
+
+  async function deleteRun(runId) {
+    if (!window.confirm('Delete this run and all its candidates?')) return
+    await supabase.from('discovery_candidates').delete().eq('run_id', runId)
+    await supabase.from('discovery_runs').delete().eq('id', runId)
+    setRuns(prev => prev.filter(r => r.id !== runId))
+    if (activeRunId === runId) {
+      setActiveRunId(null)
+      setActiveRun(null)
+      setCandidates([])
+      setPhase('idle')
+    }
   }
 
   async function selectRun(runId) {
@@ -708,7 +741,7 @@ export default function IPDiscoveryTab() {
       <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>
 
         {/* Run history sidebar */}
-        <RunHistory runs={runs} activeRunId={activeRunId} onSelect={selectRun} onNewRun={() => setShowModal(true)} />
+        <RunHistory runs={runs} activeRunId={activeRunId} onSelect={selectRun} onNewRun={() => setShowModal(true)} onDelete={deleteRun} />
 
         {/* Main content */}
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
