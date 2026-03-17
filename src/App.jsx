@@ -18,6 +18,7 @@ import SeriesManager from './pages/SeriesManager'
 import Lighting from './pages/Lighting'
 import CameraMovements from './pages/CameraMovements'
 import Documents from './pages/Documents'
+import IPDiscoveryTab from './components/admin/IPDiscoveryTab'
 
 export default function App() {
   return (
@@ -41,6 +42,7 @@ export default function App() {
         <Route path="distribution" element={<Distribution />} />
         <Route path="finances" element={<Finances />} />
         <Route path="admin" element={<Admin />} />
+        <Route path="admin/discovery" element={<IPDiscoveryTab />} />
         <Route path="profile" element={<Profile />} />
         <Route path="7stages" element={<SevenStages />} />
         <Route path="series" element={<SeriesManager />} />

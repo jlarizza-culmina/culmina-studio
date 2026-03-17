@@ -4,6 +4,7 @@ import ScoringModelsTab from '../components/ScoringModelsTab'
 import DiscoverySourcesTab from '../components/DiscoverySourcesTab'
 import LightingTab from '../components/LightingTab'
 import CameraMovementsTab from '../components/CameraMovementsTab'
+import IPDiscoveryTab from '../components/admin/IPDiscoveryTab'
 
 
 const GOLD = '#C9924A'
@@ -503,6 +504,7 @@ export default function Admin() {
     { id: 'discovery', label: 'Discovery Sources' },
     { id: 'lighting', label: 'Lighting' },
     { id: 'camera', label: 'Camera Movements' },
+    { id: 'ip-discovery', label: 'IP Discovery' },
 ]
 
   return (
@@ -527,6 +529,7 @@ export default function Admin() {
       {activeTab === 'discovery' && <DiscoverySourcesTab />}
       {activeTab === 'lighting'   && <LightingTab />}
       {activeTab === 'camera'     && <CameraMovementsTab />}
+      {activeTab === 'ip-discovery' && <IPDiscoveryTab />}
     </div>
   )
 }
