@@ -39,6 +39,7 @@ const BLANK_INSTANCE = {
   // Voice design fields (ElevenLabs v3)
   voiceage: '', voicegender: '', voiceaccent: '', voicetone: '',
   voicepacing: '', voiceemotionalrange: '', voicequalitytag: '', voicestability: '',
+  soundaimodel: '', aiimagemodel: '',
   // Image generation fields
   promptaspectratio: '', negativeprompt: '', styleconsistencyanchor: '',
   // Core instance fields
@@ -246,6 +247,29 @@ function ImageCreationPanel({ prompt, locked, isSound, onFinalSelected }) {
   )
 }
 
+function SoundModelSelect({ f, sel, locked }) {
+  const [opts, setOpts] = React.useState([])
+  React.useEffect(() => {
+    import('../lib/supabase').then(({supabase}) => {
+      supabase.from('nvpair').select('nvvalue,nvname').eq('nvgroup','SoundAIModel').eq('active',true)
+        .then(({data}) => setOpts(data||[]))
+    }).catch(() => {
+      setOpts([
+        {nvvalue:'elevenlabs',nvname:'ElevenLabs'},
+        {nvvalue:'elevenlabs_v3',nvname:'ElevenLabs v3'},
+        {nvvalue:'openai_tts',nvname:'OpenAI TTS'},
+        {nvvalue:'cartesia',nvname:'Cartesia'},
+      ])
+    })
+  }, [])
+  return (
+    <select {...f('soundaimodel')} style={sel}>
+      <option value="">— ElevenLabs (default) —</option>
+      {opts.map(o => <option key={o.nvvalue} value={o.nvvalue}>{o.nvname}</option>)}
+    </select>
+  )
+}
+
 function InstanceForm({ data, onChange, assetMeta, locked, onSaveReminder }) {
   const { assettype } = assetMeta
   const inp = mkInp(locked); const sel = mkSel(locked); const txt = mkTxt(locked)
@@ -311,6 +335,29 @@ function InstanceForm({ data, onChange, assetMeta, locked, onSaveReminder }) {
           <textarea {...f('description')} style={txt} placeholder="Free-form narrative description..." />
         </div>
 
+        {/* Image gen params — all asset types */}
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px', marginBottom:'10px' }}>
+          <div>
+            <div style={lbl}>Aspect Ratio</div>
+            <select {...f('promptaspectratio')} style={sel}>
+              <option value="">— Select —</option>
+              <option value="3:4">3:4 — Portrait (Imagen)</option>
+              <option value="9:16">9:16 — Vertical (Action)</option>
+              <option value="1:1">1:1 — Square</option>
+              <option value="16:9">16:9 — Wide</option>
+            </select>
+          </div>
+          <div>
+            <div style={lbl}>Negative Prompt</div>
+            <input {...f('negativeprompt')} style={mkInp(locked)} placeholder="e.g. cartoon, blur, text" />
+          </div>
+        </div>
+        <div style={{ marginBottom:'10px' }}>
+          <div style={lbl}>Style Consistency Anchor</div>
+          <textarea {...f('styleconsistencyanchor')} style={{...mkTxt(locked),minHeight:'56px'}} placeholder="Phrase reused across ALL instances e.g. 'always wearing olive uniform, scar above left eye'" />
+          <div style={{ fontSize:'0.65rem', color:'#6A6560', marginTop:'3px' }}>Prepended to every image prompt for this asset to maintain visual consistency across generations.</div>
+        </div>
+
         {isPerson && <>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px', marginBottom:'12px' }}>
             <div>
@@ -322,10 +369,6 @@ function InstanceForm({ data, onChange, assetMeta, locked, onSaveReminder }) {
             <div style={{ paddingTop:'22px' }}>
               <Toggle label="Speaking Role" value={!!data.speakingrole} onChange={v=>set('speakingrole',v)} disabled={locked} />
             </div>
-          </div>
-          <div style={{ marginBottom:'4px' }}>
-            <div style={lbl}>Script / Voice Notes</div>
-            <textarea {...f('script')} style={{...txt,minHeight:'60px'}} placeholder="Voice notes, personality cues, scene context..." />
           </div>
         </>}
 
@@ -553,125 +596,124 @@ function InstanceForm({ data, onChange, assetMeta, locked, onSaveReminder }) {
 
         <div style={lbl}>Prompt</div>
         <textarea {...f('prompt')} style={{...txt,minHeight:'100px',fontFamily:'monospace',fontSize:'0.75rem'}} placeholder="AI generation prompt..." />
-        <ImageCreationPanel prompt={data.prompt} locked={locked} isSound={isSound} onFinalSelected={(url,remind)=>{ onChange('finalimage',url); remind&&onSaveReminder&&onSaveReminder() }} />
-        {/* ── Image Generation Parameters ── */}
-        <div style={{ marginTop:'12px', marginBottom:'4px', fontSize:'0.68rem', color:'#6A6560', textTransform:'uppercase', letterSpacing:'0.1em', borderTop:'1px solid rgba(201,146,74,0.12)', paddingTop:'14px' }}>Image Generation</div>
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px', marginBottom:'10px' }}>
-          <div>
-            <div style={lbl}>Aspect Ratio</div>
-            <select {...f('promptaspectratio')} style={{...mkSel(locked)}}>
-              <option value="">— Select —</option>
-              <option value="3:4">3:4 — Portrait (Imagen)</option>
-              <option value="9:16">9:16 — Vertical (Action)</option>
-              <option value="1:1">1:1 — Square</option>
-              <option value="16:9">16:9 — Wide</option>
-            </select>
-          </div>
-          <div>
-            <div style={lbl}>Negative Prompt</div>
-            <input {...f('negativeprompt')} style={mkInp(locked)} placeholder="e.g. cartoon, blur, text" />
-          </div>
-        </div>
-        <div style={{ marginBottom:'10px' }}>
-          <div style={lbl}>Style Consistency Anchor</div>
-          <textarea {...f('styleconsistencyanchor')} style={{...mkTxt(locked),minHeight:'56px'}} placeholder="Phrase reused across ALL instances of this character e.g. 'always wearing olive patrol uniform, small scar above left eye'" />
-          <div style={{ fontSize:'0.65rem', color:'#6A6560', marginTop:'3px' }}>Prepended to every image prompt for this character to maintain visual consistency across generations.</div>
-        </div>
+        <Section title={isSound ? 'Audio Creation' : 'Image Creation'} defaultOpen={true}>
+          <ImageCreationPanel prompt={data.prompt} locked={locked} isSound={isSound} onFinalSelected={(url,remind)=>{ onChange('finalimage',url); remind&&onSaveReminder&&onSaveReminder() }} />
+        </Section>
 
-        {/* ── Voice Design ── */}
-        <div style={{ marginTop:'12px', marginBottom:'4px', fontSize:'0.68rem', color:'#6A6560', textTransform:'uppercase', letterSpacing:'0.1em', borderTop:'1px solid rgba(201,146,74,0.12)', paddingTop:'14px' }}>Voice Design (ElevenLabs)</div>
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px', marginBottom:'10px' }}>
-          <div>
-            <div style={lbl}>Age</div>
-            <input {...f('voiceage')} style={mkInp(locked)} placeholder="e.g. late 20s, mid 50s" />
-          </div>
-          <div>
-            <div style={lbl}>Gender</div>
-            <select {...f('voicegender')} style={mkSel(locked)}>
-              <option value="">— Select —</option>
-              <option value="Male">Male</option>
-              <option value="Female">Female</option>
-              <option value="Neutral">Neutral</option>
-            </select>
-          </div>
-          <div>
-            <div style={lbl}>Accent</div>
-            <input {...f('voiceaccent')} style={mkInp(locked)} placeholder="e.g. Eastern European, RP British" />
-          </div>
-          <div>
-            <div style={lbl}>Tone / Timbre</div>
-            <input {...f('voicetone')} style={mkInp(locked)} placeholder="e.g. Gravelly, breathy, crisp" />
-          </div>
-          <div>
-            <div style={lbl}>Pacing</div>
-            <input {...f('voicepacing')} style={mkInp(locked)} placeholder="e.g. Slow and deliberate" />
-          </div>
-          <div>
-            <div style={lbl}>Emotional Range</div>
-            <select {...f('voiceemotionalrange')} style={mkSel(locked)}>
-              <option value="">— Select —</option>
-              <option value="Wide">Wide</option>
-              <option value="Neutral">Neutral</option>
-              <option value="Narrow">Narrow</option>
-            </select>
-          </div>
-          <div>
-            <div style={lbl}>Quality Tag</div>
-            <select {...f('voicequalitytag')} style={mkSel(locked)}>
-              <option value="">— Select —</option>
-              <option value="Perfect audio quality">Perfect audio quality</option>
-              <option value="Studio-quality recording">Studio-quality recording</option>
-              <option value="Clear and natural">Clear and natural</option>
-            </select>
-          </div>
-          <div>
-            <div style={lbl}>Stability Mode</div>
-            <select {...f('voicestability')} style={mkSel(locked)}>
-              <option value="">— Select —</option>
-              <option value="Creative">Creative — expressive, variable</option>
-              <option value="Natural">Natural — balanced</option>
-              <option value="Robust">Robust — consistent, stable</option>
-            </select>
-          </div>
-        </div>
-
-        <div style={lbl}>Voice Prompt</div>
-        <textarea {...f('voiceprompt')} style={{...mkTxt(locked),minHeight:'80px'}} placeholder="ElevenLabs voice direction — generated below or write manually..." />
-        <button
-          disabled={locked}
-          onClick={async()=>{
-            if(locked) return
-            // Build structured ElevenLabs prompt from fields
-            const parts = []
-            if(data.voicequalitytag) parts.push(data.voicequalitytag + '.')
-            const identity = [data.voicegender, data.voiceage].filter(Boolean).join(' ')
-            if(identity) parts.push(identity + ' voice.')
-            if(data.voiceaccent) parts.push(data.voiceaccent + ' accent.')
-            if(data.voicetone) parts.push(data.voicetone + ' timbre.')
-            if(data.voicepacing) parts.push(data.voicepacing + ' pace.')
-            if(data.voiceemotionalrange) parts.push(data.voiceemotionalrange + ' emotional range.')
-            if(data.voicestability) parts.push(data.voicestability + ' delivery style.')
-            const structuredPrompt = parts.join(' ')
-
-            // If we have enough fields, use them directly; otherwise call Claude
-            if(parts.length >= 4) {
-              onChange('voiceprompt', structuredPrompt)
-              return
-            }
-            // Fall back to Claude for enrichment
-            const res = await fetch('/api/score',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:200,messages:[{role:'user',content:`Generate an ElevenLabs Voice Design v3 prompt for: ${data.instancename||'this character'}.
-Known attributes: ${structuredPrompt || 'none specified'}
+        {/* Voice Prompt moved into AI Prompt section */}
+        {!isSet && !isProp && (
+          <div style={{ marginTop:'12px', paddingTop:'12px', borderTop:'1px solid rgba(201,146,74,0.12)' }}>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px', marginBottom:'10px' }}>
+              <div>
+                <div style={lbl}>Image AI Model</div>
+                <select {...f('aiimagemodel')} style={sel}>
+                  <option value="">— Default —</option>
+                  <option value="imagen4">Google Imagen 4</option>
+                  <option value="imagen4ultra">Imagen 4 Ultra</option>
+                  <option value="imagen4fast">Imagen 4 Fast</option>
+                  <option value="midjourney">Midjourney</option>
+                  <option value="flux">Flux</option>
+                  <option value="grok_aurora">Grok Aurora</option>
+                </select>
+              </div>
+              <div>
+                <div style={lbl}>Sound AI Model</div>
+                <SoundModelSelect f={f} sel={sel} locked={locked} />
+              </div>
+            </div>
+            <div style={lbl}>Voice Prompt</div>
+            <textarea {...f('voiceprompt')} style={{...mkTxt(locked),minHeight:'80px'}} placeholder="ElevenLabs voice direction — generated below or write manually..." />
+            <button
+              disabled={locked}
+              onClick={async()=>{
+                if(locked) return
+                const soundModel = data.soundaimodel || 'elevenlabs'
+                const parts = []
+                if(data.voicequalitytag) parts.push(data.voicequalitytag + '.')
+                const identity = [data.voicegender, data.voiceage].filter(Boolean).join(' ')
+                if(identity) parts.push(identity + ' voice.')
+                if(data.voiceaccent) parts.push(data.voiceaccent + ' accent.')
+                if(data.voicetone) parts.push(data.voicetone + ' timbre.')
+                if(data.voicepacing) parts.push(data.voicepacing + ' pace.')
+                if(data.voiceemotionalrange) parts.push(data.voiceemotionalrange + ' emotional range.')
+                if(data.voicestability) parts.push(data.voicestability + ' delivery style.')
+                const structuredPrompt = parts.join(' ')
+                if(parts.length >= 4) { onChange('voiceprompt', structuredPrompt); return }
+                const res = await fetch('/api/score',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:200,messages:[{role:'user',content:`Generate a ${soundModel === 'elevenlabs' ? 'ElevenLabs Voice Design v3' : soundModel} voice prompt for: ${data.instancename||'this character'}.
+Known attributes: ${structuredPrompt||'none specified'}
 Image reference: ${(data.prompt||'').slice(0,200)}
 Style anchor: ${data.styleconsistencyanchor||''}
-Format: "[quality tag]. [gender] voice, [age], [accent] accent, [tone] timbre, [pacing] pace, [emotional range] emotional range. [stability] delivery."
-Return ONLY the prompt, one sentence, no preamble.`}]})})
-            const d = await res.json()
-            const text = d.content?.map(b=>b.text||'').join('') || ''
-            onChange('voiceprompt', text)
-          }}
-          style={{ background:'transparent', border:`1px solid rgba(201,146,74,0.25)`, color:locked?'#6A6560':'#C9924A', padding:'8px 16px', cursor:locked?'default':'pointer', fontFamily:'DM Sans, sans-serif', fontSize:'0.72rem', letterSpacing:'0.08em', textTransform:'uppercase', marginTop:'6px' }}>
-          Generate Voice Prompt
-        </button>
+Target platform: ${soundModel}
+Format: "[quality]. [gender] voice, [age], [accent], [tone], [pacing]. [emotional range]. [stability]."
+Return ONLY the prompt, one sentence.`}]})})
+                const d = await res.json()
+                const text = d.content?.map(b=>b.text||'').join('') || ''
+                onChange('voiceprompt', text)
+              }}
+              style={{ background:'transparent', border:`1px solid rgba(201,146,74,0.25)`, color:locked?'#6A6560':'#C9924A', padding:'8px 16px', cursor:locked?'default':'pointer', fontFamily:'DM Sans, sans-serif', fontSize:'0.72rem', letterSpacing:'0.08em', textTransform:'uppercase', marginTop:'6px' }}>
+              Generate Voice Prompt
+            </button>
+          </div>
+        )}
+      {/* ── Voice & Sound ── */}
+      {!isSet && !isProp && (
+        <Section title="Voice & Sound">
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px', marginBottom:'10px' }}>
+            <div>
+              <div style={lbl}>Age</div>
+              <input {...f('voiceage')} style={mkInp(locked)} placeholder="e.g. late 20s, mid 50s" />
+            </div>
+            <div>
+              <div style={lbl}>Gender</div>
+              <select {...f('voicegender')} style={mkSel(locked)}>
+                <option value="">— Select —</option>
+                {['Male','Female','Neutral'].map(o=><option key={o}>{o}</option>)}
+              </select>
+            </div>
+            <div>
+              <div style={lbl}>Accent</div>
+              <input {...f('voiceaccent')} style={mkInp(locked)} placeholder="e.g. Eastern European, RP British" />
+            </div>
+            <div>
+              <div style={lbl}>Tone / Timbre</div>
+              <input {...f('voicetone')} style={mkInp(locked)} placeholder="e.g. Gravelly, breathy, crisp" />
+            </div>
+            <div>
+              <div style={lbl}>Pacing</div>
+              <input {...f('voicepacing')} style={mkInp(locked)} placeholder="e.g. Slow and deliberate" />
+            </div>
+            <div>
+              <div style={lbl}>Emotional Range</div>
+              <select {...f('voiceemotionalrange')} style={mkSel(locked)}>
+                <option value="">— Select —</option>
+                {['Wide','Neutral','Narrow'].map(o=><option key={o}>{o}</option>)}
+              </select>
+            </div>
+            <div>
+              <div style={lbl}>Quality Tag</div>
+              <select {...f('voicequalitytag')} style={mkSel(locked)}>
+                <option value="">— Select —</option>
+                <option value="Perfect audio quality">Perfect audio quality</option>
+                <option value="Studio-quality recording">Studio-quality recording</option>
+                <option value="Clear and natural">Clear and natural</option>
+              </select>
+            </div>
+            <div>
+              <div style={lbl}>Stability Mode</div>
+              <select {...f('voicestability')} style={mkSel(locked)}>
+                <option value="">— Select —</option>
+                <option value="Creative">Creative — expressive</option>
+                <option value="Natural">Natural — balanced</option>
+                <option value="Robust">Robust — consistent</option>
+              </select>
+            </div>
+          </div>
+          <div style={{ marginBottom:'10px' }}>
+            <div style={lbl}>Script / Voice Notes</div>
+            <textarea {...f('script')} style={{...mkTxt(locked),minHeight:'60px'}} placeholder="Dialog, voice notes, personality cues, scene context..." />
+          </div>
+        </Section>
+      )}
       </Section>
     </div>
   )
