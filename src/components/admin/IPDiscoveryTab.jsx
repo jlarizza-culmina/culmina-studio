@@ -576,6 +576,30 @@ ONLY JSON. No text. Start { end }
     setRunning(true)
     const modelName = models.find(m => m.modelid === modelId)?.modelname || 'Model'
 
+    // Create a run record for this PDF batch
+    const { data: runData, error: runErr } = await supabase
+      .from('discovery_runs')
+      .insert({
+        run_type:       'contemporary',
+        status:         'scoring',
+        rubric_version: 'v2.2',
+        modelid:        modelId,
+        model_name:     modelName,
+        total_count:    files.length,
+      })
+      .select()
+      .single()
+
+    if (runErr || !runData) {
+      setRunning(false)
+      return
+    }
+
+    const runId = runData.id
+    if (onCandidateScored) onCandidateScored({ _runRecord: runData })
+
+    let greenlightCount = 0, developCount = 0, conditionalCount = 0, rejectCount = 0
+
     for (let i = 0; i < files.length; i++) {
       if (abortRef.current) break
       if (files[i].status === 'done') continue
@@ -601,6 +625,7 @@ ONLY JSON. No text. Start { end }
         const { data: candidate, error: dbErr } = await supabase
           .from('discovery_candidates')
           .insert({
+            run_id:         runId,
             title:          files[i].title,
             author:         result.author       ?? null,
             year_published: year,
@@ -615,6 +640,11 @@ ONLY JSON. No text. Start { end }
 
         if (dbErr) throw new Error(dbErr.message)
 
+        if (scoreRow.verdict === 'Greenlight')  greenlightCount++
+        if (scoreRow.verdict === 'Develop')     developCount++
+        if (scoreRow.verdict === 'Conditional') conditionalCount++
+        if (scoreRow.verdict === 'Reject')      rejectCount++
+
         setFiles(prev => prev.map((f, idx) => idx === i ? { ...f, status: 'done', result: candidate } : f))
         if (onCandidateScored) onCandidateScored(candidate)
 
@@ -625,6 +655,19 @@ ONLY JSON. No text. Start { end }
       // Throttle — 1 second between calls
       await new Promise(r => setTimeout(r, 1000))
     }
+
+    // Update run to complete
+    await supabase
+      .from('discovery_runs')
+      .update({
+        status:          'complete',
+        completed_at:    new Date().toISOString(),
+        strong_count:    greenlightCount,
+        promising_count: developCount,
+        marginal_count:  conditionalCount,
+        pass_count:      rejectCount,
+      })
+      .eq('id', runId)
 
     setRunning(false)
   }
@@ -842,6 +885,30 @@ ONLY JSON. No text. Start { end }
     setRunning(true)
     const modelName = models.find(m => m.modelid === modelId)?.modelname || 'Model'
 
+    // Create a run record for this PDF batch
+    const { data: runData, error: runErr } = await supabase
+      .from('discovery_runs')
+      .insert({
+        run_type:       'contemporary',
+        status:         'scoring',
+        rubric_version: 'v2.2',
+        modelid:        modelId,
+        model_name:     modelName,
+        total_count:    files.length,
+      })
+      .select()
+      .single()
+
+    if (runErr || !runData) {
+      setRunning(false)
+      return
+    }
+
+    const runId = runData.id
+    if (onCandidateScored) onCandidateScored({ _runRecord: runData })
+
+    let greenlightCount = 0, developCount = 0, conditionalCount = 0, rejectCount = 0
+
     for (let i = 0; i < files.length; i++) {
       if (abortRef.current) break
       if (files[i].status === 'done') continue
@@ -867,6 +934,7 @@ ONLY JSON. No text. Start { end }
         const { data: candidate, error: dbErr } = await supabase
           .from('discovery_candidates')
           .insert({
+            run_id:         runId,
             title:          files[i].title,
             author:         result.author       ?? null,
             year_published: year,
@@ -881,6 +949,11 @@ ONLY JSON. No text. Start { end }
 
         if (dbErr) throw new Error(dbErr.message)
 
+        if (scoreRow.verdict === 'Greenlight')  greenlightCount++
+        if (scoreRow.verdict === 'Develop')     developCount++
+        if (scoreRow.verdict === 'Conditional') conditionalCount++
+        if (scoreRow.verdict === 'Reject')      rejectCount++
+
         setFiles(prev => prev.map((f, idx) => idx === i ? { ...f, status: 'done', result: candidate } : f))
         if (onCandidateScored) onCandidateScored(candidate)
 
@@ -891,6 +964,19 @@ ONLY JSON. No text. Start { end }
       // Throttle — 1 second between calls
       await new Promise(r => setTimeout(r, 1000))
     }
+
+    // Update run to complete
+    await supabase
+      .from('discovery_runs')
+      .update({
+        status:          'complete',
+        completed_at:    new Date().toISOString(),
+        strong_count:    greenlightCount,
+        promising_count: developCount,
+        marginal_count:  conditionalCount,
+        pass_count:      rejectCount,
+      })
+      .eq('id', runId)
 
     setRunning(false)
   }
