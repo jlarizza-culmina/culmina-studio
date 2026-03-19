@@ -1826,7 +1826,7 @@ DESCRIPTION: ${desc}
 
 Return JSON: {"title":{"overview":"...","genre":"...","settingdescription":"...","timeperiod":"...","tone":"...","hook":"...","centralconflict":"...","whymicrodrama":"..."},"arcs":[{"name":"...","description":"...","sets":"...","characters":"...","acts":[{"actnumber":1,"name":"...","episoderange":"Eps 1-5","summary":"...","sets":"...","characters":"...","episodes":[{"episodenumber":1,"name":"...","logline":"...","cliffhanger":"..."}]}]}]}
 
-Aim for 2-4 arcs, 3-5 acts per arc, 50-70 total episodes. Be specific and production-ready for ReelShort/TikTok.`;
+Aim for 2-3 arcs, 2-3 acts per arc, 20-30 total episodes. Keep loglines and cliffhangers under 15 words each. Be concise.`;
 }
 
 
