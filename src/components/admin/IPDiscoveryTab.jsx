@@ -573,19 +573,17 @@ ONLY JSON. No text. Start { end }
   }
 
   // ── Run scoring ───────────────────────────────────────────────────────────
-  async function handleRun() { console.log("PDF handleRun called, files:", files.length, "modelId:", modelId)
+  async function handleRun() { 
     if (!modelId || files.length === 0 || running) return
     abortRef.current = false
     setRunning(true)
     const modelName = models.find(m => m.modelid === modelId)?.modelname || 'Model'
-    console.log('PDF handleRun starting')
     const { data: runData, error: runErr } = await supabase
       .from('discovery_runs')
       .insert({ run_type: 'contemporary', status: 'scoring', rubric_version: 'v2.2', modelid: modelId, model_name: modelName, total_count: files.filter(f => f.status !== 'done').length })
       .select().single()
     if (runErr || !runData) { console.error('Run create failed:', runErr?.message); setRunning(false); return }
     const runId = runData.id
-    console.log('Run created:', runId)
     let g = 0, d = 0, c = 0, r = 0
     for (let i = 0; i < files.length; i++) {
       if (abortRef.current) break
@@ -602,7 +600,6 @@ ONLY JSON. No text. Start { end }
         const ipType = (year && year < 1928) ? 'public_domain' : 'contemporary'
         const { data: candidate, error: dbErr } = await supabase.from('discovery_candidates').insert({ run_id: runId, title: files[i].title, author: result.author ?? 'Unknown', year_published: year, genre: result.genre ?? null, description: result.description ?? null, ip_type: ipType, rights_status: ipType === 'contemporary' ? 'rights_required' : 'public_domain', ...scoreRow }).select().single()
         if (dbErr) throw new Error(dbErr.message)
-        console.log('Saved:', candidate?.title, scoreRow.verdict)
         if (scoreRow.verdict === 'Greenlight') g++
         if (scoreRow.verdict === 'Develop') d++
         if (scoreRow.verdict === 'Conditional') c++
@@ -927,7 +924,6 @@ export default function IPDiscoveryTab() {
     }
 
     const runId = runData.id
-    console.log('Run created:', runId)
     setActiveRunId(runId)
     setActiveRun(runData)
     setRuns(prev => [runData, ...prev])
