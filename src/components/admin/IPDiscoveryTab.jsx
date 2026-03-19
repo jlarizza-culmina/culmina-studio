@@ -464,6 +464,272 @@ function ScoreFromURL({ models, onCandidateScored }) {
   )
 }
 
+// ── Score from PDFs panel ─────────────────────────────────────────────────────
+// Drop up to 50 PDFs — filename = title, Claude extracts metadata + scores each
+
+function ScoreFromPDFs({ models, onCandidateScored }) {
+  const [modelId, setModelId]     = useState(models[0]?.modelid ?? null)
+  const [files, setFiles]         = useState([])   // { file, status, result, error }
+  const [running, setRunning]     = useState(false)
+  const [dragOver, setDragOver]   = useState(false)
+  const fileInputRef              = useRef(null)
+  const abortRef                  = useRef(false)
+
+  useEffect(() => { if (models.length > 0 && !modelId) setModelId(models[0].modelid) }, [models])
+
+  // ── PDF text extraction via pdfjs ────────────────────────────────────────
+  async function extractPdfText(file, maxChars = 6000) {
+    const pdfjsLib = await import('pdfjs-dist')
+    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+      'pdfjs-dist/build/pdf.worker.mjs',
+      import.meta.url
+    ).toString()
+
+    const arrayBuffer = await file.arrayBuffer()
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+    let text = ''
+    const maxPages = Math.min(pdf.numPages, 8) // first 8 pages is enough for metadata + plot
+    for (let i = 1; i <= maxPages; i++) {
+      const page = await pdf.getPage(i)
+      const content = await page.getTextContent()
+      text += content.items.map(item => item.str).join(' ') + '\n'
+      if (text.length > maxChars) break
+    }
+    return text.slice(0, maxChars)
+  }
+
+  // ── Combined extract + score prompt ──────────────────────────────────────
+  const EXTRACT_AND_SCORE_PROMPT = (title, pdfText, modelName) =>
+    `You are an IP analyst for Culmina AI Drama Studio scoring books for micro-drama adaptation (ReelShort/DramaBox, women 18-45, 60s episodes). Model: ${modelName}.
+
+Book title (from filename): "${title}"
+
+First pages of the book:
+---
+${pdfText}
+---
+
+Step 1: Extract metadata from the text above.
+Step 2: Score for micro-drama adaptation using the v2.2 rubric (13 dimensions, max 60 raw).
+
+A-NARRATIVE(40): cliffhanger_density(8), trope_stacking(7), emotional_escalation(6), status_reversal(6), visual_scene_variety(5), dialogue_action_ratio(4), episode_count_fit(4)
+B-AUDIENCE(10): audience_alignment(5), ip_clarity(3), paywall_trigger(2)
+C-PRODUCTION(10): character_load(3:1-3=3,4-6=2,7-10=1,11+=0), set_location_count(3:2-5=3,6-10=2,11+=1), ai_feasibility(4:contemporary=4,simple-hist=3,complex-hist=2,fantasy=1)
+
+platform_target: "Cross-platform"|"ReelShort"|"DramaBox"
+genre_tier: "Tier 1"(CEO+identity)|"Tier 2"(mafia,contract)|"Tier 3"(werewolf,campus,historical)|"Tier 4"(scifi,interactive)
+
+ONLY JSON. No text. Start { end }
+{
+  "author": "extracted author name or null",
+  "year": 2019,
+  "genre": "primary genre",
+  "description": "1-2 sentence plot summary",
+  "cliffhanger_density":{"score":7,"note":"brief"},
+  "trope_stacking":{"score":5,"note":"brief"},
+  "emotional_escalation":{"score":5,"note":"brief"},
+  "status_reversal":{"score":4,"note":"brief"},
+  "visual_scene_variety":{"score":4,"note":"brief"},
+  "dialogue_action_ratio":{"score":3,"note":"brief"},
+  "episode_count_fit":{"score":3,"note":"brief"},
+  "audience_alignment":{"score":4,"note":"brief"},
+  "ip_clarity":{"score":2,"note":"brief"},
+  "paywall_trigger":{"score":2,"note":"brief"},
+  "character_load":{"score":3,"note":"brief"},
+  "set_location_count":{"score":2,"note":"brief"},
+  "ai_feasibility":{"score":4,"note":"brief"},
+  "tagline":"one line",
+  "adaptation_notes":"1-2 sentences",
+  "character_count":4,
+  "set_count":6,
+  "platform_target":"Cross-platform",
+  "genre_tier":"Tier 1"
+}`
+
+  // ── File handling ─────────────────────────────────────────────────────────
+  function titleFromFilename(filename) {
+    return filename.replace(/\.pdf$/i, '').replace(/[-_]/g, ' ').trim()
+  }
+
+  function addFiles(newFiles) {
+    const pdfs = Array.from(newFiles).filter(f => f.type === 'application/pdf' || f.name.endsWith('.pdf'))
+    const capped = pdfs.slice(0, 50 - files.length)
+    setFiles(prev => [
+      ...prev,
+      ...capped.map(f => ({ file: f, title: titleFromFilename(f.name), status: 'queued', result: null, error: null }))
+    ])
+  }
+
+  function removeFile(index) {
+    setFiles(prev => prev.filter((_, i) => i !== index))
+  }
+
+  function clearAll() {
+    setFiles([])
+    abortRef.current = true
+  }
+
+  // ── Run scoring ───────────────────────────────────────────────────────────
+  async function handleRun() {
+    if (!modelId || files.length === 0 || running) return
+    abortRef.current = false
+    setRunning(true)
+    const modelName = models.find(m => m.modelid === modelId)?.modelname || 'Model'
+
+    for (let i = 0; i < files.length; i++) {
+      if (abortRef.current) break
+      if (files[i].status === 'done') continue
+
+      // Mark as processing
+      setFiles(prev => prev.map((f, idx) => idx === i ? { ...f, status: 'extracting' } : f))
+
+      try {
+        // Extract PDF text
+        const pdfText = await extractPdfText(files[i].file)
+        if (!pdfText || pdfText.length < 100) throw new Error('Could not extract text from PDF')
+
+        setFiles(prev => prev.map((f, idx) => idx === i ? { ...f, status: 'scoring' } : f))
+
+        // Combined extract + score call
+        const result = await callClaude(EXTRACT_AND_SCORE_PROMPT(files[i].title, pdfText, modelName))
+        if (!result?.cliffhanger_density) throw new Error(getLastApiError() || 'No score returned')
+
+        const scoreRow = scoreToRow(result)
+        const year = result.year ?? null
+        const ipType = (year && year < 1928) ? 'public_domain' : 'contemporary'
+
+        const { data: candidate, error: dbErr } = await supabase
+          .from('discovery_candidates')
+          .insert({
+            title:          files[i].title,
+            author:         result.author       ?? null,
+            year_published: year,
+            genre:          result.genre        ?? null,
+            description:    result.description  ?? null,
+            ip_type:        ipType,
+            rights_status:  ipType === 'contemporary' ? 'rights_required' : 'public_domain',
+            ...scoreRow,
+          })
+          .select()
+          .single()
+
+        if (dbErr) throw new Error(dbErr.message)
+
+        setFiles(prev => prev.map((f, idx) => idx === i ? { ...f, status: 'done', result: candidate } : f))
+        if (onCandidateScored) onCandidateScored(candidate)
+
+      } catch (err) {
+        setFiles(prev => prev.map((f, idx) => idx === i ? { ...f, status: 'error', error: err.message } : f))
+      }
+
+      // Throttle — 1 second between calls
+      await new Promise(r => setTimeout(r, 1000))
+    }
+
+    setRunning(false)
+  }
+
+  const isBusy = running
+  const queuedCount  = files.filter(f => f.status === 'queued').length
+  const doneCount    = files.filter(f => f.status === 'done').length
+  const errorCount   = files.filter(f => f.status === 'error').length
+  const activeCount  = files.filter(f => ['extracting','scoring'].includes(f.status)).length
+
+  const statusColor  = (s) => s === 'done' ? GREEN : s === 'error' ? RED : s === 'scoring' || s === 'extracting' ? GOLD : CHARCOAL
+  const statusLabel  = (s) => s === 'done' ? '✓' : s === 'error' ? '✗' : s === 'extracting' ? '⟳ extracting' : s === 'scoring' ? '⟳ scoring' : '…'
+
+  return (
+    <div style={{ background: '#1e1a14', border: `1px solid ${GOLD}33`, borderRadius: 12, padding: '16px 18px', marginBottom: 16 }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: CREAM, fontFamily: "'Cormorant Garamond', serif" }}>
+          📄 Score from PDFs
+          <span style={{ fontSize: 9, color: CHARCOAL, fontFamily: 'DM Sans, sans-serif', fontWeight: 400, marginLeft: 8 }}>up to 50 · filename = title</span>
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <select value={modelId ?? ''} onChange={e => setModelId(parseInt(e.target.value))}
+            style={{ background: '#111009', border: `1px solid rgba(201,146,74,0.12)`, color: CREAM, padding: '6px 10px', fontFamily: 'DM Sans, sans-serif', fontSize: '0.78rem', outline: 'none', borderRadius: 4, cursor: 'pointer' }}>
+            {models.map(m => <option key={m.modelid} value={m.modelid}>{m.modelname}</option>)}
+          </select>
+          {files.length > 0 && !running && (
+            <button onClick={clearAll} style={{ background: 'none', border: `1px solid #2a2520`, color: CHARCOAL, borderRadius: 6, padding: '5px 10px', fontSize: 9, cursor: 'pointer', letterSpacing: 1, textTransform: 'uppercase' }}>Clear</button>
+          )}
+          {running && (
+            <button onClick={() => { abortRef.current = true }} style={{ background: 'none', border: `1px solid ${RED}55`, color: RED, borderRadius: 6, padding: '5px 10px', fontSize: 9, cursor: 'pointer', letterSpacing: 1, textTransform: 'uppercase' }}>Stop</button>
+          )}
+          {files.length > 0 && !running && queuedCount > 0 && (
+            <button onClick={handleRun}
+              style={{ background: GOLD, color: INK, border: 'none', borderRadius: 6, padding: '6px 14px', fontSize: 10, fontWeight: 700, cursor: 'pointer', letterSpacing: 1, textTransform: 'uppercase' }}>
+              ▶ Score {queuedCount}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Drop zone */}
+      {files.length < 50 && (
+        <div
+          onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={e => { e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer.files) }}
+          onClick={() => fileInputRef.current?.click()}
+          style={{
+            border: `2px dashed ${dragOver ? GOLD : '#2a2520'}`,
+            borderRadius: 8, padding: '20px', textAlign: 'center', cursor: 'pointer',
+            background: dragOver ? 'rgba(201,146,74,0.04)' : 'transparent',
+            marginBottom: files.length > 0 ? 12 : 0,
+            transition: 'all 0.2s',
+          }}
+        >
+          <div style={{ fontSize: 20, marginBottom: 6 }}>📄</div>
+          <div style={{ fontSize: 11, color: CHARCOAL }}>Drop PDFs here or click to browse</div>
+          <div style={{ fontSize: 9, color: CHARCOAL, opacity: 0.6, marginTop: 4 }}>{50 - files.length} slots remaining</div>
+          <input ref={fileInputRef} type="file" accept=".pdf,application/pdf" multiple style={{ display: 'none' }}
+            onChange={e => { addFiles(e.target.files); e.target.value = '' }} />
+        </div>
+      )}
+
+      {/* Progress summary */}
+      {files.length > 0 && (
+        <div style={{ display: 'flex', gap: 16, marginBottom: 10, flexWrap: 'wrap' }}>
+          {[['Total', files.length, CREAM], ['Done', doneCount, GREEN], ['Errors', errorCount, RED], ['Queued', queuedCount, CHARCOAL]].map(([l, v, c]) => v > 0 && (
+            <div key={l} style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 18, fontWeight: 800, color: c, fontFamily: "'Cormorant Garamond', serif", lineHeight: 1 }}>{v}</div>
+              <div style={{ fontSize: 8, color: CHARCOAL, textTransform: 'uppercase', letterSpacing: 1 }}>{l}</div>
+            </div>
+          ))}
+          {running && <div style={{ fontSize: 9, color: GOLD, alignSelf: 'center' }}>Processing {activeCount > 0 ? '…' : ''}</div>}
+        </div>
+      )}
+
+      {/* File list */}
+      {files.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 280, overflowY: 'auto' }}>
+          {files.map((f, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: '#12100c', borderRadius: 6, border: `1px solid ${f.status === 'done' ? '#4A9C7A33' : f.status === 'error' ? '#C84B3133' : '#2a2520'}` }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 11, color: CREAM, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.title}</div>
+                {f.result && (
+                  <div style={{ fontSize: 9, color: statusColor('done'), marginTop: 2 }}>
+                    {f.result.verdict} · {f.result.normalized_score}/100 · {f.result.genre || ''}
+                  </div>
+                )}
+                {f.error && <div style={{ fontSize: 9, color: RED, marginTop: 2 }}>{f.error}</div>}
+              </div>
+              <div style={{ fontSize: 9, color: statusColor(f.status), flexShrink: 0, minWidth: 60, textAlign: 'right' }}>
+                {statusLabel(f.status)}
+              </div>
+              {!running && f.status !== 'done' && (
+                <button onClick={() => removeFile(i)} style={{ background: 'none', border: 'none', color: CHARCOAL, fontSize: 10, cursor: 'pointer', padding: '0 2px', flexShrink: 0 }}>✕</button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Run History sidebar ───────────────────────────────────────
 function RunHistory({ runs, activeRunId, onSelect, onNewRun, onDelete }) {
   return (
@@ -921,6 +1187,7 @@ export default function IPDiscoveryTab() {
 
           {/* Score from URL */}
           <ScoreFromURL models={models} onCandidateScored={(c) => setCandidates(prev => [c, ...prev])} />
+          <ScoreFromPDFs models={models} onCandidateScored={(c) => setCandidates(prev => [c, ...prev])} />
 
           {/* Filter controls */}
           {candidates.length > 0 && (
