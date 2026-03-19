@@ -629,6 +629,7 @@ ONLY JSON. No text. Start { end }
       await new Promise(r => setTimeout(r, 1000))
     }
 
+    if (onRunComplete) onRunComplete()
     setRunning(false)
   }
 
@@ -891,6 +892,8 @@ export default function IPDiscoveryTab() {
       setCandidates([])
       setPhase('idle')
     }
+    // Force reload to confirm delete persisted
+    setTimeout(() => loadRuns(), 500)
   }
 
   async function selectRun(runId) {
