@@ -105,6 +105,22 @@ async function callClaude(prompt) {
 }
 
 // ── Prompts (v2.2) ────────────────────────────────────────────
+// ── Page fetch proxy ─────────────────────────────────────────────────────────
+async function fetchPageText(url) {
+  try {
+    const res = await fetch('/api/fetch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    })
+    if (!res.ok) { const e = await res.json().catch(() => ({})); return { error: e.error || `HTTP ${res.status}` } }
+    const data = await res.json()
+    return { text: data.text, url: data.url }
+  } catch (err) {
+    return { error: err.message }
+  }
+}
+
 const BOOK_GEN_PROMPT = (type) => {
   const seed = Math.floor(Math.random() * 9000) + 1000
   const rotations = [
@@ -123,6 +139,28 @@ List 10 DIFFERENT ${type === 'contemporary' ? 'contemporary (post-2000) bestsell
 ONLY raw JSON array. No markdown. No text. Start [ end ]
 [{"title":"X","author":"X","year":2019,"description":"1 sentence plot","genre":"Dark Romance","isbn":"","publisher":""}]`
 }
+
+const EXTRACT_FROM_URL_PROMPT = (pageText, url) =>
+  `You are an IP analyst for Culmina AI Drama Studio. Extract book metadata from this web page.
+Source URL: ${url}
+
+Page content:
+---
+${pageText}
+---
+
+Return ONLY a JSON object with these fields. If a field cannot be determined, use null.
+{
+  "title": "Book title",
+  "author": "Author full name",
+  "year": 2019,
+  "genre": "Primary genre (e.g. Dark Romance, Billionaire Romance)",
+  "description": "1-2 sentence plot summary",
+  "isbn": "ISBN if found, else null",
+  "publisher": "Publisher if found, else null",
+  "source_url": "${url}"
+}
+No markdown. No text. Start { end }`
 
 const SCORE_ONE_PROMPT = (book, modelName) =>
   `Score for micro-drama adaptation (ReelShort/DramaBox, women 18-45, 60s episodes). Model: ${modelName}.
@@ -262,7 +300,9 @@ function CandidateCard({ candidate, index, onPromote }) {
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, flexWrap: 'wrap', gap: 8 }}>
         <div style={{ display: 'flex', gap: 10 }}>
-          {[['Google Books', `https://www.google.com/search?q=${encodeURIComponent(candidate.title + ' ' + candidate.author)}+book`],
+          {[
+            ...(candidate.source_url ? [['🔗 Source Page', candidate.source_url]] : []),
+            ['Google Books', `https://www.google.com/search?q=${encodeURIComponent(candidate.title + ' ' + candidate.author)}+book`],
             ['Goodreads',    `https://www.goodreads.com/search?q=${encodeURIComponent(candidate.title + ' ' + candidate.author)}`],
             ['Amazon',       `https://www.amazon.com/s?k=${encodeURIComponent(candidate.title + ' ' + candidate.author)}`],
           ].map(([label, url]) => (
@@ -653,6 +693,7 @@ export default function IPDiscoveryTab() {
         activestatus:      'A',
         genre:             candidate.genre      ?? null,
         summary:           candidate.description ?? null,
+        source_url:        candidate.source_url  ?? null,
         createdate:        new Date().toISOString(),
         updatedate:        new Date().toISOString(),
       })
@@ -784,6 +825,12 @@ export default function IPDiscoveryTab() {
               )}
             </div>
           )}
+
+          {/* Score from URL */}
+          <ScoreFromURL
+            models={models}
+            onCandidateScored={(c) => setCandidates(prev => [c, ...prev])}
+          />
 
           {/* Filter controls */}
           {candidates.length > 0 && (

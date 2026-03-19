@@ -6,6 +6,37 @@ function apiProxy() {
   return {
     name: 'api-proxy',
     configureServer(server) {
+      // /api/fetch — proxies arbitrary URL fetches server-side (avoids CORS)
+      server.middlewares.use('/api/fetch', async (req, res) => {
+        if (req.method === 'OPTIONS') { res.writeHead(200); res.end(); return }
+        if (req.method !== 'POST') { res.writeHead(405); res.end(JSON.stringify({ error: 'POST only' })); return }
+        let body = ''
+        req.on('data', chunk => { body += chunk })
+        req.on('end', async () => {
+          try {
+            const { url } = JSON.parse(body)
+            if (!url) { res.writeHead(400); res.end(JSON.stringify({ error: 'Missing url' })); return }
+            const response = await fetch(url, {
+              headers: { 'User-Agent': 'Mozilla/5.0 (compatible; CulminaBot/1.0)', 'Accept': 'text/html,*/*' },
+              redirect: 'follow',
+            })
+            let html = await response.text()
+            html = html
+              .replace(/<script[\s\S]*?<\/script>/gi, '')
+              .replace(/<style[\s\S]*?<\/style>/gi, '')
+              .replace(/<[^>]+>/g, ' ')
+              .replace(/\s{3,}/g, '\n\n')
+              .trim()
+              .slice(0, 8000)
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ text: html, url }))
+          } catch (err) {
+            res.writeHead(500)
+            res.end(JSON.stringify({ error: err.message }))
+          }
+        })
+      })
+
       server.middlewares.use('/api/score', async (req, res) => {
         if (req.method === 'OPTIONS') { res.writeHead(200); res.end(); return }
         if (req.method !== 'POST') { res.writeHead(405); res.end(JSON.stringify({ error: 'POST only' })); return }
