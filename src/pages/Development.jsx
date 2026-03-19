@@ -1952,7 +1952,7 @@ Requirements:
     try {
       if (action === 'bible') {
         const prompt = buildSeriesBiblePrompt(titleNode)
-        const result = await callClaude(prompt)
+        const result = await callClaude(prompt, 16000)
         const clean = result.replace(/```json|```/g, '').trim()
         const parsed = JSON.parse(clean)
         setBibleModal({ titleNode, parsed })
