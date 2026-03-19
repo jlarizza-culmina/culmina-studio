@@ -3,6 +3,17 @@ import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
 
 // ── Brand tokens ───────────────────────────────────────────────
+
+async function callClaude(prompt, maxTokens = 4000) {
+  const res = await fetch("/api/score", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt, max_tokens: maxTokens }),
+  })
+  const data = await res.json()
+  return (data.content || []).map(b => b.text || "").join("")
+}
+
 const C = {
   ink:     '#1A1810',
   cream:   '#F7F2E8',
