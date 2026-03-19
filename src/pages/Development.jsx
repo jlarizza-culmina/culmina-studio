@@ -1954,7 +1954,18 @@ Requirements:
         const prompt = buildSeriesBiblePrompt(titleNode)
         const result = await callClaude(prompt, 16000)
         const clean = result.replace(/```json|```/g, '').trim()
-        const parsed = JSON.parse(clean)
+        let parsed
+        try {
+          parsed = JSON.parse(clean)
+        } catch (jsonErr) {
+          const salvage = clean
+            .replace(/,\s*$/, '')
+            .replace(/"\s*$/, '"')
+          const brackets = (salvage.match(/\[/g)||[]).length - (salvage.match(/\]/g)||[]).length
+          const braces = (salvage.match(/\{/g)||[]).length - (salvage.match(/\}/g)||[]).length
+          const repaired = salvage + ']'.repeat(Math.max(0,brackets)) + '}'.repeat(Math.max(0,braces))
+          parsed = JSON.parse(repaired)
+        }
         setBibleModal({ titleNode, parsed })
       } else if (action === 'assets') {
         const prompt = buildAssetsPrompt(titleNode)
