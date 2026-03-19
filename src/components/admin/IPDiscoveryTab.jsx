@@ -371,6 +371,99 @@ function CandidateCard({ candidate, index, onPromote }) {
   )
 }
 
+// ── Score from URL panel ─────────────────────────────────────────────────────
+function ScoreFromURL({ models, onCandidateScored }) {
+  const [url, setUrl]         = useState('')
+  const [modelId, setModelId] = useState(models[0]?.modelid ?? null)
+  const [phase, setPhase]     = useState('idle')
+  const [log, setLog]         = useState([])
+  const [result, setResult]   = useState(null)
+
+  useEffect(() => { if (models.length > 0 && !modelId) setModelId(models[0].modelid) }, [models])
+
+  const addLog = (msg) => setLog(l => [...l.slice(-8), msg])
+
+  async function handleRun() {
+    if (!url.trim() || !modelId) return
+    setPhase('fetching'); setLog([]); setResult(null)
+    const modelName = models.find(m => m.modelid === modelId)?.modelname || 'Model'
+    addLog(`🌐 Fetching page…`)
+
+    const fetched = await fetchPageText(url.trim())
+    if (fetched.error) { addLog(`✗ ${fetched.error}`); setPhase('error'); return }
+    addLog(`✅ Page retrieved. Extracting metadata…`)
+    setPhase('extracting')
+
+    const extracted = await callClaude(EXTRACT_FROM_URL_PROMPT(fetched.text, url.trim()))
+    if (!extracted?.title) { addLog(`✗ Could not extract book metadata`); setPhase('error'); return }
+    addLog(`✅ "${extracted.title}" by ${extracted.author || 'Unknown'}. Scoring…`)
+    setPhase('scoring')
+
+    const scored = await callClaude(SCORE_ONE_PROMPT(extracted, modelName))
+    if (!scored?.cliffhanger_density) { addLog(`✗ Scoring failed: ${getLastApiError()}`); setPhase('error'); return }
+
+    const scoreRow = scoreToRow(scored)
+    const ipType = (extracted.year && extracted.year < 1928) ? 'public_domain' : 'contemporary'
+
+    const { data: candidate, error } = await supabase
+      .from('discovery_candidates')
+      .insert({
+        title:          extracted.title,
+        author:         extracted.author    ?? null,
+        year_published: extracted.year      ?? null,
+        genre:          extracted.genre     ?? null,
+        description:    extracted.description ?? null,
+        ip_type:        ipType,
+        rights_status:  ipType === 'contemporary' ? 'rights_required' : 'public_domain',
+        source_url:     url.trim(),
+        ...scoreRow,
+      })
+      .select()
+      .single()
+
+    if (error) { addLog(`✗ Save failed: ${error.message}`); setPhase('error'); return }
+
+    addLog(`✅ ${scoreRow.verdict} (${scoreRow.normalized_score}/100)`)
+    setResult(candidate)
+    setPhase('done')
+    if (onCandidateScored) onCandidateScored(candidate)
+  }
+
+  const isBusy = ['fetching','extracting','scoring'].includes(phase)
+
+  return (
+    <div style={{ background: '#1e1a14', border: `1px solid ${GOLD}33`, borderRadius: 12, padding: '16px 18px', marginBottom: 16 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: CREAM, fontFamily: "'Cormorant Garamond', serif", marginBottom: 12 }}>🔗 Score from URL</div>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+        <input
+          value={url} onChange={e => setUrl(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleRun()}
+          placeholder="Paste any book page URL (Amazon, Goodreads, Galatea, Gutenberg…)"
+          style={{ flex: 1, minWidth: 200, background: '#111009', border: `1px solid rgba(201,146,74,0.12)`, color: CREAM, padding: '8px 12px', fontFamily: 'DM Sans, sans-serif', fontSize: '0.82rem', outline: 'none', borderRadius: 4 }}
+        />
+        <select value={modelId ?? ''} onChange={e => setModelId(parseInt(e.target.value))}
+          style={{ background: '#111009', border: `1px solid rgba(201,146,74,0.12)`, color: CREAM, padding: '8px 10px', fontFamily: 'DM Sans, sans-serif', fontSize: '0.78rem', outline: 'none', borderRadius: 4, cursor: 'pointer' }}>
+          {models.map(m => <option key={m.modelid} value={m.modelid}>{m.modelname}</option>)}
+        </select>
+        <button onClick={handleRun} disabled={!url.trim() || isBusy}
+          style={{ background: (!url.trim() || isBusy) ? 'rgba(201,146,74,0.3)' : GOLD, color: INK, border: 'none', borderRadius: 6, padding: '8px 16px', fontSize: 10, fontWeight: 700, cursor: 'pointer', letterSpacing: 1, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+          {phase === 'fetching' ? 'Fetching…' : phase === 'extracting' ? 'Extracting…' : phase === 'scoring' ? 'Scoring…' : '▶ Score'}
+        </button>
+      </div>
+      {log.length > 0 && (
+        <div style={{ background: '#12100c', borderRadius: 6, padding: '8px 10px', fontFamily: 'monospace', fontSize: 10, color: '#6b6057', maxHeight: 100, overflowY: 'auto', marginBottom: 8 }}>
+          {log.map((l, i) => <div key={i} style={{ color: l.includes('✗') ? '#C84B31' : i === log.length - 1 ? GOLD : undefined, lineHeight: 1.5 }}>{l}</div>)}
+        </div>
+      )}
+      {result && phase === 'done' && (
+        <div style={{ padding: '8px 12px', background: 'rgba(74,156,122,0.08)', border: '1px solid rgba(74,156,122,0.3)', borderRadius: 6, fontSize: 10, color: '#4A9C7A' }}>
+          ✓ "{result.title}" scored · {result.verdict} ({result.normalized_score}/100)
+        </div>
+      )}
+      <div style={{ marginTop: 8, fontSize: 9, color: CHARCOAL }}>Works with Amazon, Goodreads, Galatea, Project Gutenberg, or any book detail page.</div>
+    </div>
+  )
+}
+
 // ── Run History sidebar ───────────────────────────────────────
 function RunHistory({ runs, activeRunId, onSelect, onNewRun, onDelete }) {
   return (
@@ -827,10 +920,7 @@ export default function IPDiscoveryTab() {
           )}
 
           {/* Score from URL */}
-          <ScoreFromURL
-            models={models}
-            onCandidateScored={(c) => setCandidates(prev => [c, ...prev])}
-          />
+          <ScoreFromURL models={models} onCandidateScored={(c) => setCandidates(prev => [c, ...prev])} />
 
           {/* Filter controls */}
           {candidates.length > 0 && (
