@@ -409,7 +409,7 @@ function ScoreFromURL({ models, onCandidateScored }) {
       .from('discovery_candidates')
       .insert({
         title:          extracted.title,
-        author:         extracted.author    ?? null,
+        author:         extracted.author    ?? 'Unknown',
         year_published: extracted.year      ?? null,
         genre:          extracted.genre     ?? null,
         description:    extracted.description ?? null,
@@ -605,7 +605,7 @@ ONLY JSON. No text. Start { end }
           .from('discovery_candidates')
           .insert({
             title:          files[i].title,
-            author:         result.author       ?? null,
+            author:         result.author       ?? 'Unknown',
             year_published: year,
             genre:          result.genre        ?? null,
             description:    result.description  ?? null,
