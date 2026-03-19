@@ -1816,6 +1816,32 @@ const MODEL_PROMPT_GUIDES = {
 
 // Fully-enriched production guide prompt
 // episodeContexts = array of { episode, characters, sets, props, lightingSnippet }
+
+function buildSeriesBiblePrompt(titleNode) {
+  const desc = titleNode.description || titleNode.synopsis || '(no description)';
+  return `You are Culmina AI Drama Studio's Series Bible Generator. Return ONLY valid JSON.
+
+TITLE: ${titleNode.productiontitle}
+DESCRIPTION: ${desc}
+
+Return JSON: {"title":{"overview":"...","genre":"...","settingdescription":"...","timeperiod":"...","tone":"...","hook":"...","centralconflict":"...","whymicrodrama":"..."},"arcs":[{"name":"...","description":"...","sets":"...","characters":"...","acts":[{"actnumber":1,"name":"...","episoderange":"Eps 1-5","summary":"...","sets":"...","characters":"...","episodes":[{"episodenumber":1,"name":"...","logline":"...","cliffhanger":"..."}]}]}]}
+
+Aim for 2-4 arcs, 3-5 acts per arc, 50-70 total episodes. Be specific and production-ready for ReelShort/TikTok.`;
+}
+
+
+function buildAssetsPrompt(titleNode) {
+  const desc = titleNode.description || titleNode.synopsis || '(no description)';
+  return `You are Culmina AI Drama Studio's Asset Generator. Return ONLY valid JSON.
+
+TITLE: ${titleNode.productiontitle}
+DESCRIPTION: ${desc}
+
+Return JSON: {"characters":[{"assetname":"Name","assettype":"Person","description":"...","characterimportance":"Lead|Supporting|Background","speakingrole":true,"sex":"Male|Female","haircolor":"...","hairlength":"Short|Medium|Long","eyecolor":"...","bodyshape":"Slim|Athletic|Average|Heavy","skintone":"...","ethnicity":"...","scars":null,"tattoos":null,"piercings":null,"instances":[{"instancename":"Portrait","prompt":"Detailed Imagen prompt...","wardrobe":"...","voicenotes":"ElevenLabs voice description"}]}],"sets":[{"assetname":"Location","assettype":"Set","description":"...","setdominantcolor":"...","setsecondarycolor":"...","setaccentcolor":"...","instances":[{"instancename":"Establishing Shot","prompt":"Detailed Imagen prompt..."}]}]}
+
+Include 5-10 characters (2-3 leads, rest supporting) and 4-8 sets. Be specific with visual prompts.`;
+}
+
 function buildProductionGuidePrompt(titleNode, epStart, epEnd, episodeContexts) {
 
   const modelKey = titleNode.aimodel || 'default'
