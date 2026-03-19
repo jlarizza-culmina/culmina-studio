@@ -467,7 +467,7 @@ function ScoreFromURL({ models, onCandidateScored }) {
 // ── Score from PDFs panel ─────────────────────────────────────────────────────
 // Drop up to 50 PDFs — filename = title, Claude extracts metadata + scores each
 
-function ScoreFromPDFs({ models, onCandidateScored }) {
+function ScoreFromPDFs({ models, onCandidateScored, onRunComplete }) {
   const [modelId, setModelId]     = useState(models[0]?.modelid ?? null)
   const [files, setFiles]         = useState([])   // { file, status, result, error }
   const [running, setRunning]     = useState(false)
@@ -669,6 +669,7 @@ ONLY JSON. No text. Start { end }
       })
       .eq('id', runId)
 
+    if (onRunComplete) onRunComplete()
     setRunning(false)
   }
 
@@ -776,7 +777,7 @@ ONLY JSON. No text. Start { end }
 // ── Score from PDFs panel ─────────────────────────────────────────────────────
 // Drop up to 50 PDFs — filename = title, Claude extracts metadata + scores each
 
-function ScoreFromPDFs({ models, onCandidateScored }) {
+function ScoreFromPDFs({ models, onCandidateScored, onRunComplete }) {
   const [modelId, setModelId]     = useState(models[0]?.modelid ?? null)
   const [files, setFiles]         = useState([])   // { file, status, result, error }
   const [running, setRunning]     = useState(false)
@@ -978,6 +979,7 @@ ONLY JSON. No text. Start { end }
       })
       .eq('id', runId)
 
+    if (onRunComplete) onRunComplete()
     setRunning(false)
   }
 
@@ -1539,8 +1541,8 @@ export default function IPDiscoveryTab() {
 
           {/* Score from URL */}
           <ScoreFromURL models={models} onCandidateScored={(c) => setCandidates(prev => [c, ...prev])} />
-          <ScoreFromPDFs models={models} onCandidateScored={(c) => setCandidates(prev => [c, ...prev])} />
-          <ScoreFromPDFs models={models} onCandidateScored={(c) => setCandidates(prev => [c, ...prev])} />
+          <ScoreFromPDFs models={models} onCandidateScored={(c) => { if (!c?._runRecord) setCandidates(prev => [c, ...prev]) }} onRunComplete={loadRuns} />
+          <ScoreFromPDFs models={models} onCandidateScored={(c) => { if (!c?._runRecord) setCandidates(prev => [c, ...prev]) }} onRunComplete={loadRuns} />
 
           {/* Filter controls */}
           {candidates.length > 0 && (
