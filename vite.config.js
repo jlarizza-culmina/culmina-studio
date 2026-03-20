@@ -88,12 +88,12 @@ function apiProxy() {
             const { prompt, model, aspectRatio, durationSeconds, negativePrompt } = JSON.parse(body)
             if (!prompt) { res.writeHead(400); res.end(JSON.stringify({ error: 'prompt required' })); return }
             const veoModel = model || 'veo-3.0-generate-preview'
-            const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${veoModel}:predictLongRunning?key=${apiKey}`
+            const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${veoModel}:predictLongRunning`
             const payload  = {
               instances:  [{ prompt: prompt.trim(), ...(negativePrompt ? { negativePrompt } : {}) }],
-              parameters: { aspectRatio: aspectRatio || '9:16', sampleCount: 1, durationSeconds: durationSeconds || 8, personGeneration: 'allow_adult', safetyFilterLevel: 'block_only_high' },
+              parameters: { aspectRatio: aspectRatio || '9:16', sampleCount: 1 },
             }
-            const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+            const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey }, body: JSON.stringify(payload) })
             const data     = await response.text()
             res.writeHead(response.status, { 'Content-Type': 'application/json' })
             res.end(data)

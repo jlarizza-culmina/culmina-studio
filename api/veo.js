@@ -15,16 +15,13 @@ export default async function handler(req, res) {
   if (!prompt) return res.status(400).json({ error: 'prompt is required' })
 
   const veoModel  = model || 'veo-3.0-generate-preview'
-  const endpoint  = `https://generativelanguage.googleapis.com/v1beta/models/${veoModel}:predictLongRunning?key=${apiKey}`
+  const endpoint  = `https://generativelanguage.googleapis.com/v1beta/models/${veoModel}:predictLongRunning`
 
   const payload = {
     instances: [{ prompt: prompt.trim() }],
     parameters: {
-      aspectRatio:       aspectRatio     || '9:16',
-      sampleCount:       1,
-      durationSeconds:   durationSeconds || 8,
-      personGeneration:  'allow_adult',
-      safetyFilterLevel: 'block_only_high',
+      aspectRatio:  aspectRatio || '9:16',
+      sampleCount:  1,
     },
   }
   if (negativePrompt) payload.instances[0].negativePrompt = negativePrompt
@@ -32,7 +29,7 @@ export default async function handler(req, res) {
   try {
     const response = await fetch(endpoint, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
       body: JSON.stringify(payload),
     })
     const data = await response.json()

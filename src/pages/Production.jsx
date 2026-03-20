@@ -72,7 +72,7 @@ function TreeNode({ node, allNodes, selectedId, onSelect, depth=0 }) {
 function GenTakesModal({ shot, onClose, onDone }) {
   const [phase,   setPhase]   = useState('setup')   // 'setup' | 'generating' | 'done'
   const [form,    setForm]    = useState({
-    model:          'veo-3.0-generate-preview',
+    model:          'veo-3.1-generate-preview',
     prompt:         shot.aigeneratedprompt || shot.prompt || '',
     negativePrompt: shot.negativeprompt   || '',
     duration:       8,
@@ -242,7 +242,7 @@ function GenTakesModal({ shot, onClose, onDone }) {
                 <label style={labelStyle}>Model</label>
                 <select value={form.model} onChange={e => setForm(f => ({ ...f, model: e.target.value }))}
                   style={{ ...inputStyle, cursor:'pointer' }}>
-                  <option value="veo-3.0-generate-preview">Veo 3 (preview)</option>
+                  <option value="veo-3.1-generate-preview">Veo 3.1 (preview)</option>
                   <option value="veo-2.0-generate-001">Veo 2</option>
                 </select>
               </div>
