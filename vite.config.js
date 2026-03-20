@@ -112,7 +112,7 @@ function apiProxy() {
         if (!op) { res.writeHead(400); res.end(JSON.stringify({ error: 'op required' })); return }
         const opPath = op.startsWith('operations/') ? op : `operations/${op}`
         try {
-          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/${opPath}?key=${apiKey}`)
+          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/${opPath}`, { headers: { 'x-goog-api-key': apiKey } })
           const data     = await response.text()
           res.writeHead(response.status, { 'Content-Type': 'application/json' })
           res.end(data)
