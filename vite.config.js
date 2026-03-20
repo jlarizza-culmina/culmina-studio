@@ -73,6 +73,69 @@ function apiProxy() {
           }
         })
       })
+
+      // /api/veo — submit Veo generation job
+      server.middlewares.use('/api/veo', async (req, res) => {
+        if (req.method === 'OPTIONS') { res.writeHead(200); res.end(); return }
+        if (req.method !== 'POST') { res.writeHead(405); res.end(JSON.stringify({ error: 'POST only' })); return }
+        const env    = loadEnv('development', process.cwd(), '')
+        const apiKey = env.GOOGLE_IMAGEN_KEY
+        if (!apiKey) { res.writeHead(500); res.end(JSON.stringify({ error: 'GOOGLE_IMAGEN_KEY not set' })); return }
+        let body = ''
+        req.on('data', chunk => { body += chunk })
+        req.on('end', async () => {
+          try {
+            const { prompt, model, aspectRatio, durationSeconds, negativePrompt } = JSON.parse(body)
+            if (!prompt) { res.writeHead(400); res.end(JSON.stringify({ error: 'prompt required' })); return }
+            const veoModel = model || 'veo-3.0-generate-preview'
+            const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${veoModel}:predictLongRunning?key=${apiKey}`
+            const payload  = {
+              instances:  [{ prompt: prompt.trim(), ...(negativePrompt ? { negativePrompt } : {}) }],
+              parameters: { aspectRatio: aspectRatio || '9:16', sampleCount: 1, durationSeconds: durationSeconds || 8, personGeneration: 'allow_adult', safetyFilterLevel: 'block_only_high' },
+            }
+            const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+            const data     = await response.text()
+            res.writeHead(response.status, { 'Content-Type': 'application/json' })
+            res.end(data)
+          } catch (err) { res.writeHead(500); res.end(JSON.stringify({ error: err.message })) }
+        })
+      })
+
+      // /api/veo-poll — poll Veo operation status
+      server.middlewares.use('/api/veo-poll', async (req, res) => {
+        if (req.method === 'OPTIONS') { res.writeHead(200); res.end(); return }
+        const env    = loadEnv('development', process.cwd(), '')
+        const apiKey = env.GOOGLE_IMAGEN_KEY
+        if (!apiKey) { res.writeHead(500); res.end(JSON.stringify({ error: 'GOOGLE_IMAGEN_KEY not set' })); return }
+        const url    = new URL(req.url, 'http://localhost')
+        const op     = url.searchParams.get('op')
+        if (!op) { res.writeHead(400); res.end(JSON.stringify({ error: 'op required' })); return }
+        const opPath = op.startsWith('operations/') ? op : `operations/${op}`
+        try {
+          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/${opPath}?key=${apiKey}`)
+          const data     = await response.text()
+          res.writeHead(response.status, { 'Content-Type': 'application/json' })
+          res.end(data)
+        } catch (err) { res.writeHead(500); res.end(JSON.stringify({ done: false, error: err.message })) }
+      })
+
+      // /api/veo-proxy — stream video from googleapis (keeps API key server-side)
+      server.middlewares.use('/api/veo-proxy', async (req, res) => {
+        if (req.method === 'OPTIONS') { res.writeHead(200); res.end(); return }
+        const env    = loadEnv('development', process.cwd(), '')
+        const apiKey = env.GOOGLE_IMAGEN_KEY
+        if (!apiKey) { res.writeHead(500); res.end(JSON.stringify({ error: 'GOOGLE_IMAGEN_KEY not set' })); return }
+        const url = new URL(req.url, 'http://localhost')
+        const uri = url.searchParams.get('uri')
+        if (!uri) { res.writeHead(400); res.end(JSON.stringify({ error: 'uri required' })); return }
+        try {
+          const decoded  = decodeURIComponent(uri)
+          const response = await fetch(`${decoded}?key=${apiKey}&alt=media`)
+          const buffer   = await response.arrayBuffer()
+          res.writeHead(response.status, { 'Content-Type': response.headers.get('content-type') || 'video/mp4', 'Cache-Control': 'public, max-age=3600' })
+          res.end(Buffer.from(buffer))
+        } catch (err) { res.writeHead(500); res.end(JSON.stringify({ error: err.message })) }
+      })
     },
   }
 }

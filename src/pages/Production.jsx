@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 
 const GOLD = '#C9924A'
@@ -70,52 +70,272 @@ function TreeNode({ node, allNodes, selectedId, onSelect, depth=0 }) {
 // ─── Generate Takes Modal ────────────────────────────────────────────────────
 
 function GenTakesModal({ shot, onClose, onDone }) {
-  const [form, setForm] = useState({ aimodel: shot.aimodel||'Veo 2', variations:1 })
-  const [saving, setSaving] = useState(false)
+  const [phase,   setPhase]   = useState('setup')   // 'setup' | 'generating' | 'done'
+  const [form,    setForm]    = useState({
+    model:          'veo-3.0-generate-preview',
+    prompt:         shot.aigeneratedprompt || shot.prompt || '',
+    negativePrompt: shot.negativeprompt   || '',
+    duration:       8,
+    variations:     1,
+  })
+  const [takes,        setTakes]        = useState([])
+  const [assets,       setAssets]       = useState([])
+  const [loadingAssets,setLoadingAssets]= useState(true)
+  const pollRef  = useRef(null)
+  const takesRef = useRef([])
 
-  async function handleGenerate() {
-    setSaving(true)
-    const inserts = Array.from({length:parseInt(form.variations)}, (_,i) => ({
-      productiontitle: `Take ${i+1}`,
-      productiongroup: 'TAKE',
-      productionstatus: 'queued',
-      parentproductionid: shot.productionid,
-      aimodel: form.aimodel,
-      activestatus: 'A',
-      createdate: new Date().toISOString(),
-      updatedate: new Date().toISOString(),
-    }))
-    await supabase.from('productions').insert(inserts)
-    await supabase.from('productions').update({ productionstatus:'queued', aimodel:form.aimodel, updatedate:new Date().toISOString() }).eq('productionid', shot.productionid)
-    setSaving(false)
-    onDone()
-    onClose()
+  useEffect(() => {
+    loadAssets()
+    return () => { if (pollRef.current) clearInterval(pollRef.current) }
+  }, [])
+
+  async function loadAssets() {
+    const { data } = await supabase
+      .from('production_assets')
+      .select('assetid, instanceid, assets(assetname, assettype), assetinstances(instancename)')
+      .eq('productionid', shot.productionid)
+      .eq('activestatus', 'A')
+      .eq('included', true)
+    setAssets(data || [])
+    setLoadingAssets(false)
   }
 
+  async function handleGenerate() {
+    setPhase('generating')
+    // Mark shot as in_production
+    await supabase.from('productions').update({
+      productionstatus: 'in_production', aimodel: form.model,
+      updatedate: new Date().toISOString(),
+    }).eq('productionid', shot.productionid)
+
+    const newTakes = []
+    for (let i = 0; i < parseInt(form.variations); i++) {
+      // Insert TAKE row (need .select() to get productionid)
+      const { data: takeData, error: takeErr } = await supabase
+        .from('productions')
+        .insert([{
+          productiontitle:    `Take ${i + 1}`,
+          productiongroup:    'TAKE',
+          parentproductionid: shot.productionid,
+          aimodel:            form.model,
+          productionstatus:   'in_production',
+          prompt:             form.prompt,
+          activestatus:       'A',
+          createdate:         new Date().toISOString(),
+          updatedate:         new Date().toISOString(),
+        }])
+        .select('productionid')
+        .single()
+
+      if (takeErr) {
+        newTakes.push({ tempId: i, name: `Take ${i + 1}`, status: 'error', error: takeErr.message })
+        continue
+      }
+      const takeId = takeData.productionid
+
+      // Submit to Veo
+      let opResult = {}
+      try {
+        const resp = await fetch('/api/veo', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt:          form.prompt,
+            model:           form.model,
+            aspectRatio:     '9:16',
+            durationSeconds: parseInt(form.duration),
+            negativePrompt:  form.negativePrompt || undefined,
+          }),
+        })
+        opResult = await resp.json()
+      } catch (err) {
+        opResult = { error: err.message }
+      }
+
+      if (opResult.error) {
+        await supabase.from('productions').update({
+          productionstatus: 'error', notes: opResult.error,
+          updatedate: new Date().toISOString(),
+        }).eq('productionid', takeId)
+        newTakes.push({ productionid: takeId, name: `Take ${i + 1}`, status: 'error', error: opResult.error })
+      } else {
+        await supabase.from('productions').update({
+          operationname: opResult.operationName,
+          updatedate: new Date().toISOString(),
+        }).eq('productionid', takeId)
+        newTakes.push({ productionid: takeId, name: `Take ${i + 1}`, status: 'in_production', operationName: opResult.operationName })
+      }
+    }
+
+    takesRef.current = newTakes
+    setTakes([...newTakes])
+    startPolling()
+  }
+
+  function startPolling() {
+    pollRef.current = setInterval(async () => {
+      const pending = takesRef.current.filter(t => t.status === 'in_production' && t.operationName)
+      if (pending.length === 0) {
+        clearInterval(pollRef.current)
+        setPhase('done')
+        onDone()
+        return
+      }
+      const updates = []
+      for (const take of pending) {
+        try {
+          const result = await fetch(`/api/veo-poll?op=${encodeURIComponent(take.operationName)}`).then(r => r.json())
+          if (result.done) {
+            if (result.error) {
+              await supabase.from('productions').update({ productionstatus: 'error', notes: result.error, updatedate: new Date().toISOString() }).eq('productionid', take.productionid)
+              updates.push({ id: take.productionid, status: 'error', error: result.error })
+            } else {
+              await supabase.from('productions').update({ productionstatus: 'completed', videourl: result.videoUri, updatedate: new Date().toISOString() }).eq('productionid', take.productionid)
+              updates.push({ id: take.productionid, status: 'completed', videoUri: result.videoUri })
+            }
+          }
+        } catch { /* retry next tick */ }
+      }
+      if (updates.length > 0) {
+        const updated = takesRef.current.map(t => {
+          const u = updates.find(x => x.id === t.productionid)
+          return u ? { ...t, ...u } : t
+        })
+        takesRef.current = updated
+        setTakes([...updated])
+      }
+    }, 8000)
+  }
+
+  const inputStyle  = { width:'100%', background:SURFACE2, border:`1px solid ${BORDER}`, color:CREAM, padding:'9px 12px', fontFamily:'DM Sans, sans-serif', fontSize:'0.82rem', outline:'none', boxSizing:'border-box' }
+  const labelStyle  = { display:'block', fontSize:'0.67rem', color:CHARCOAL, letterSpacing:'0.12em', textTransform:'uppercase', marginBottom:'6px' }
+  const rowStyle    = { display:'grid', gridTemplateColumns:'1fr 1fr', gap:'16px', marginBottom:'16px' }
+
   return (
-    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.75)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000 }}
-      onClick={onClose}>
-      <div style={{ background:SURFACE, border:`1px solid ${BORDER}`, padding:'32px', width:'440px', maxWidth:'90vw' }} onClick={e=>e.stopPropagation()}>
-        <h3 style={{ fontFamily:'Cormorant Garamond, serif', fontSize:'1.4rem', color:CREAM, marginBottom:'6px', fontWeight:300 }}>Generate Takes</h3>
-        <div style={{ fontSize:'0.75rem', color:CHARCOAL, marginBottom:'24px' }}>{shot.productiontitle}</div>
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.8)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000 }}
+      onClick={phase === 'setup' ? onClose : undefined}>
+      <div style={{ background:SURFACE, border:`1px solid ${BORDER}`, padding:'32px', width:'620px', maxWidth:'95vw', maxHeight:'90vh', overflowY:'auto' }}
+        onClick={e => e.stopPropagation()}>
 
-        <label style={{ display:'block', fontSize:'0.68rem', color:CHARCOAL, letterSpacing:'0.12em', textTransform:'uppercase', marginBottom:'6px' }}>AI Model</label>
-        <select value={form.aimodel} onChange={e=>setForm(f=>({...f,aimodel:e.target.value}))}
-          style={{ width:'100%', background:SURFACE2, border:`1px solid ${BORDER}`, color:CREAM, padding:'9px 12px', fontFamily:'DM Sans, sans-serif', fontSize:'0.83rem', outline:'none', marginBottom:'16px', cursor:'pointer' }}>
-          {AI_MODELS.map(m=><option key={m}>{m}</option>)}
-        </select>
+        {/* Header */}
+        <h3 style={{ fontFamily:'Cormorant Garamond, serif', fontSize:'1.5rem', color:CREAM, marginBottom:'4px', fontWeight:300 }}>
+          {phase === 'setup' ? 'Generate Takes' : phase === 'generating' ? 'Generating…' : 'Generation Complete'}
+        </h3>
+        <div style={{ fontSize:'0.72rem', color:CHARCOAL, marginBottom:'24px' }}>{shot.productiontitle}</div>
 
-        <label style={{ display:'block', fontSize:'0.68rem', color:CHARCOAL, letterSpacing:'0.12em', textTransform:'uppercase', marginBottom:'6px' }}>Variations (1–5)</label>
-        <input type="number" min={1} max={5} value={form.variations} onChange={e=>setForm(f=>({...f,variations:Math.min(5,Math.max(1,e.target.value))}))}
-          style={{ width:'100%', background:SURFACE2, border:`1px solid ${BORDER}`, color:CREAM, padding:'9px 12px', fontFamily:'DM Sans, sans-serif', fontSize:'0.83rem', outline:'none', marginBottom:'24px' }} />
+        {/* ── SETUP PHASE ── */}
+        {phase === 'setup' && (
+          <>
+            {/* Prompt */}
+            <label style={labelStyle}>Veo Prompt</label>
+            <textarea value={form.prompt} onChange={e => setForm(f => ({ ...f, prompt: e.target.value }))} rows={5}
+              style={{ ...inputStyle, resize:'vertical', lineHeight:1.5, marginBottom:'14px' }} />
 
-        <div style={{ display:'flex', gap:'10px' }}>
-          <button onClick={handleGenerate} disabled={saving}
-            style={{ background:GOLD, border:'none', color:'#1A1810', padding:'10px 24px', cursor:'pointer', fontFamily:'DM Sans, sans-serif', fontSize:'0.75rem', letterSpacing:'0.1em', textTransform:'uppercase', fontWeight:500, opacity:saving?0.7:1 }}>
-            {saving?'Generating...':'Generate'}
-          </button>
-          <button onClick={onClose} style={{ background:'none', border:`1px solid ${BORDER}`, color:CHARCOAL, padding:'10px 18px', cursor:'pointer', fontFamily:'DM Sans, sans-serif', fontSize:'0.75rem' }}>Cancel</button>
-        </div>
+            {/* Negative prompt */}
+            <label style={labelStyle}>Negative Prompt <span style={{ color:MUTED, fontWeight:300, textTransform:'none', letterSpacing:0 }}>(optional)</span></label>
+            <input value={form.negativePrompt} onChange={e => setForm(f => ({ ...f, negativePrompt: e.target.value }))}
+              style={{ ...inputStyle, marginBottom:'16px' }} placeholder="e.g. blurry, low quality, text, watermark" />
+
+            {/* Model / Duration / Variations */}
+            <div style={rowStyle}>
+              <div>
+                <label style={labelStyle}>Model</label>
+                <select value={form.model} onChange={e => setForm(f => ({ ...f, model: e.target.value }))}
+                  style={{ ...inputStyle, cursor:'pointer' }}>
+                  <option value="veo-3.0-generate-preview">Veo 3 (preview)</option>
+                  <option value="veo-2.0-generate-001">Veo 2</option>
+                </select>
+              </div>
+              <div>
+                <label style={labelStyle}>Duration (sec)</label>
+                <input type="number" min={5} max={8} value={form.duration}
+                  onChange={e => setForm(f => ({ ...f, duration: Math.min(8, Math.max(5, parseInt(e.target.value)||8)) }))}
+                  style={inputStyle} />
+              </div>
+            </div>
+            <div style={{ marginBottom:'20px' }}>
+              <label style={labelStyle}>Variations (1–5)</label>
+              <input type="number" min={1} max={5} value={form.variations}
+                onChange={e => setForm(f => ({ ...f, variations: Math.min(5, Math.max(1, parseInt(e.target.value)||1)) }))}
+                style={{ ...inputStyle, width:'120px' }} />
+            </div>
+
+            {/* Asset context */}
+            {!loadingAssets && assets.length > 0 && (
+              <div style={{ marginBottom:'24px' }}>
+                <label style={labelStyle}>Assets in this shot</label>
+                <div style={{ display:'flex', flexWrap:'wrap', gap:'6px' }}>
+                  {assets.map((a, i) => (
+                    <span key={i} style={{ background:SURFACE2, border:`1px solid ${BORDER}`, color:CHARCOAL, padding:'3px 10px', fontSize:'0.72rem', borderRadius:'2px' }}>
+                      {a.assets?.assetname || '—'}{a.assetinstances?.instancename ? ` · ${a.assetinstances.instancename}` : ''}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Prompt empty warning */}
+            {!form.prompt.trim() && (
+              <div style={{ color:'#FFB84A', fontSize:'0.75rem', marginBottom:'16px' }}>
+                ⚠ No prompt found on this shot. Add one in Development before generating.
+              </div>
+            )}
+
+            <div style={{ display:'flex', gap:'10px' }}>
+              <button onClick={handleGenerate} disabled={!form.prompt.trim()}
+                style={{ background:GOLD, border:'none', color:'#1A1810', padding:'10px 28px', cursor:'pointer', fontFamily:'DM Sans, sans-serif', fontSize:'0.75rem', letterSpacing:'0.1em', textTransform:'uppercase', fontWeight:500, opacity:!form.prompt.trim()?0.5:1 }}>
+                Generate {form.variations > 1 ? `${form.variations} Takes` : 'Take'}
+              </button>
+              <button onClick={onClose}
+                style={{ background:'none', border:`1px solid ${BORDER}`, color:CHARCOAL, padding:'10px 18px', cursor:'pointer', fontFamily:'DM Sans, sans-serif', fontSize:'0.75rem' }}>
+                Cancel
+              </button>
+            </div>
+          </>
+        )}
+
+        {/* ── GENERATING / DONE PHASE ── */}
+        {(phase === 'generating' || phase === 'done') && (
+          <>
+            {phase === 'generating' && (
+              <div style={{ fontSize:'0.78rem', color:MUTED, marginBottom:'20px' }}>
+                Submitted to Veo · polling every 8s · typical wait 2–4 minutes
+              </div>
+            )}
+            <div style={{ display:'flex', flexDirection:'column', gap:'16px', marginBottom:'24px' }}>
+              {takes.map((take, i) => (
+                <div key={take.productionid || i}
+                  style={{ background:SURFACE2, border:`1px solid ${BORDER}`, padding:'16px 20px' }}>
+                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom: take.videoUri ? '12px' : 0 }}>
+                    <span style={{ color:CREAM, fontSize:'0.85rem' }}>{take.name}</span>
+                    <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
+                      {take.status === 'in_production' && (
+                        <span style={{ fontSize:'0.7rem', color:MUTED }}>polling…</span>
+                      )}
+                      <StatusBadge status={take.status === 'completed' ? 'complete' : take.status} />
+                    </div>
+                  </div>
+                  {take.error && (
+                    <div style={{ fontSize:'0.72rem', color:RED, marginTop:'8px' }}>{take.error}</div>
+                  )}
+                  {take.videoUri && (
+                    <video
+                      src={`/api/veo-proxy?uri=${encodeURIComponent(take.videoUri)}`}
+                      controls
+                      style={{ width:'100%', maxHeight:'280px', background:'#000', marginTop:'10px', display:'block' }}
+                    />
+                  )}
+                </div>
+              ))}
+            </div>
+            {phase === 'done' && (
+              <button onClick={onClose}
+                style={{ background:GOLD, border:'none', color:'#1A1810', padding:'10px 28px', cursor:'pointer', fontFamily:'DM Sans, sans-serif', fontSize:'0.75rem', letterSpacing:'0.1em', textTransform:'uppercase', fontWeight:500 }}>
+                Done
+              </button>
+            )}
+          </>
+        )}
       </div>
     </div>
   )
