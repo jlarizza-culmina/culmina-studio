@@ -1493,19 +1493,30 @@ async function writeAssetsToDb(titleId, assetsJson) {
 
 // ── Write Production Guide to Supabase ──────────────────────
 async function writeProductionGuide(titleId, guideJson, existingEpisodes, onProgress) {
-  // Find the first Act under this title to attach episodes to
-  // Walk: title -> arc -> act
+  // Load ALL assets for this title once — used for name→id resolution when writing shot assets
+  const { data: titleAssets } = await supabase
+    .from('assets')
+    .select('assetid, assetname, assetinstances(instanceid, instancename)')
+    .eq('titleproductionid', titleId)
+    .eq('activestatus', 'A')
+
+  // Build lowercase name → asset lookup
+  const assetMap = {}
+  for (const a of (titleAssets || [])) {
+    if (a.assetname) assetMap[a.assetname.toLowerCase().trim()] = a
+  }
+
+  // Walk: title -> arc -> act to find parent for episodes
   const { data: arcs } = await supabase
     .from('productions')
-    .select('productionid, productiontitle')
+    .select('productionid')
     .eq('parentproductionid', titleId)
     .eq('productiongroup', 'ARC')
     .eq('activestatus', 'A')
     .order('sortorder')
 
   let actId = null
-
-  if (arcs && arcs.length > 0) {
+  if (arcs?.length > 0) {
     const { data: acts } = await supabase
       .from('productions')
       .select('productionid')
@@ -1513,10 +1524,10 @@ async function writeProductionGuide(titleId, guideJson, existingEpisodes, onProg
       .eq('productiongroup', 'ACT')
       .eq('activestatus', 'A')
       .order('sortorder')
-    if (acts && acts.length > 0) actId = acts[0].productionid
+    if (acts?.length > 0) actId = acts[0].productionid
   }
 
-  // If no hierarchy, attach directly to title
+  // If no hierarchy exists yet, attach directly to title
   const parentId = actId || titleId
 
   let epCount = 0
@@ -1524,12 +1535,11 @@ async function writeProductionGuide(titleId, guideJson, existingEpisodes, onProg
     epCount++
     if (onProgress) onProgress(`Writing Episode ${ep.episodenumber}… (${epCount}/${guideJson.episodes.length})`)
 
-    // Check if episode already exists (match by episode number)
     const existing = existingEpisodes.find(e => e.episodenumber === ep.episodenumber)
 
     let epId
     if (existing) {
-      // Update existing episode
+      // Update existing episode metadata
       await supabase.from('productions').update({
         productiontitle: ep.name,
         synopsis:        ep.synopsis,
@@ -1538,29 +1548,30 @@ async function writeProductionGuide(titleId, guideJson, existingEpisodes, onProg
       }).eq('productionid', existing.productionid)
       epId = existing.productionid
 
-      // Delete existing shots for this episode
+      // Delete existing shots — clean up production_assets first to avoid orphans
       const { data: existingShots } = await supabase
         .from('productions')
         .select('productionid')
         .eq('parentproductionid', epId)
         .eq('productiongroup', 'SHOT')
       if (existingShots?.length) {
-        await supabase.from('productions').delete()
-          .in('productionid', existingShots.map(s => s.productionid))
+        const shotIds = existingShots.map(s => s.productionid)
+        await supabase.from('production_assets').delete().in('productionid', shotIds)
+        await supabase.from('productions').delete().in('productionid', shotIds)
       }
     } else {
       // Insert new episode
       const { data: epData, error: epErr } = await supabase
         .from('productions')
         .insert([{
-          productiontitle:  ep.name,
-          productiongroup:  'EPISODE',
+          productiontitle:    ep.name,
+          productiongroup:    'EPISODE',
           parentproductionid: parentId,
-          episodenumber:    ep.episodenumber,
-          synopsis:         ep.synopsis,
-          targetruntime:    ep.targetruntime || 75,
-          activestatus:     'A',
-          sortorder:        ep.episodenumber,
+          episodenumber:      ep.episodenumber,
+          synopsis:           ep.synopsis,
+          targetruntime:      ep.targetruntime || 75,
+          activestatus:       'A',
+          sortorder:          ep.episodenumber,
         }])
         .select('productionid')
         .single()
@@ -1568,29 +1579,62 @@ async function writeProductionGuide(titleId, guideJson, existingEpisodes, onProg
       epId = epData.productionid
     }
 
-    // Insert shots
+    // Insert shots + their production_assets
     let shotSort = 1
     for (const shot of (ep.shots || [])) {
-      const { error: shotErr } = await supabase
+      // .select() is required so we get the new shot's productionid for production_assets
+      const { data: shotData, error: shotErr } = await supabase
         .from('productions')
         .insert([{
-          productiontitle:    shot.name,
-          productiongroup:    'SHOT',
-          parentproductionid: epId,
-          shotlength:         shot.shotlength || 8,
-          cameraangle:        shot.cameraangle || null,
-          cameramovement:     shot.cameramovement || null,
-          subjectaction:      shot.subjectaction || null,
-          lighting:           shot.lighting || null,
-          script:             shot.script || null,
-          prompt:             shot.prompt || null,
-          aigeneratedprompt:  shot.prompt || null,
+          productiontitle:       shot.name,
+          productiongroup:       'SHOT',
+          parentproductionid:    epId,
+          shotlength:            shot.shotlength || 8,
+          cameraangle:           shot.cameraangle || null,
+          cameramovement:        shot.cameramovement || null,
+          subjectaction:         shot.subjectaction || null,
+          lighting:              shot.lighting || null,
+          script:                shot.script || null,
+          prompt:                shot.prompt || null,
+          aigeneratedprompt:     shot.prompt || null,
           aigeneratedpromptdate: shot.prompt ? new Date().toISOString() : null,
-          notes:              shot.notes || null,
-          activestatus:       'A',
-          sortorder:          shotSort++,
+          notes:                 shot.notes || null,
+          activestatus:          'A',
+          sortorder:             shotSort++,
         }])
+        .select('productionid')
+        .single()
       if (shotErr) throw new Error(`Shot insert failed: ${shotErr.message}`)
+      const shotId = shotData.productionid
+
+      // Resolve shot.assets[] → production_assets rows
+      // Each asset is { assetname, instancename } — matched by name against this title's assets
+      const paRows = []
+      for (const sa of (shot.assets || [])) {
+        const key = (sa.assetname || '').toLowerCase().trim()
+        const matched = assetMap[key]
+        if (!matched) continue   // AI hallucinated an asset name — skip gracefully
+
+        let instanceId = null
+        if (sa.instancename) {
+          const inst = (matched.assetinstances || []).find(
+            i => i.instancename?.toLowerCase().trim() === sa.instancename.toLowerCase().trim()
+          )
+          if (inst) instanceId = inst.instanceid
+        }
+        paRows.push({
+          productionid: shotId,
+          assetid:      matched.assetid,
+          instanceid:   instanceId,
+          assetlevel:   'SHOT',
+          included:     true,
+          activestatus: 'A',
+        })
+      }
+      if (paRows.length > 0) {
+        const { error: paErr } = await supabase.from('production_assets').insert(paRows)
+        if (paErr) console.warn(`Shot ${shotId} assets insert warning: ${paErr.message}`)
+      }
     }
   }
 }
@@ -1931,7 +1975,10 @@ Return this exact JSON structure:
           "lighting": "e.g. Low Key Lighting",
           "script": "CHARACTER: \"Line here.\"\nCHARACTER 2: \"Response.\"",
           "prompt": "${isDraft ? '40+ word draft prompt' : '80+ word ' + modelName + '-optimized prompt'} following the format above — reference specific characters and sets from context above by name",
-          "notes": "Production note or continuity flag"
+          "notes": "Production note or continuity flag",
+          "assets": [
+            { "assetname": "Exact asset name from episode context", "instancename": "Exact instance name or omit if none" }
+          ]
         }
       ]
     }
@@ -1944,7 +1991,8 @@ Requirements:
 - Each episode 60–90 seconds total runtime
 - Reference characters, sets, and props from the episode context by name in prompts
 - Cliffhanger should drive the final shot of each episode
-- Return ONLY the JSON object, nothing else`
+- Return ONLY the JSON object, nothing else
+- For each shot's assets array, use EXACT asset and instance names from the episode context — these will be matched to the database by name`
 }
 
   const runAI = async (titleNode, action) => {
