@@ -43,7 +43,7 @@ function StatusBadge({ status }) {
 // ─── Tree ────────────────────────────────────────────────────────────────────
 
 function TreeNode({ node, allNodes, selectedId, onSelect, depth=0 }) {
-  const children = allNodes.filter(n => n.parentproductionid === node.productionid)
+  const children = allNodes.filter(n => n.parentproductionid === node.productionid).sort((a,b) => (a.sortorder||0)-(b.sortorder||0))
   const [open, setOpen] = useState(depth < 2)
   const isSelected = selectedId === node.productionid
   const color = GROUP_COLORS[node.productiongroup] || CHARCOAL
@@ -57,7 +57,7 @@ function TreeNode({ node, allNodes, selectedId, onSelect, depth=0 }) {
         {children.length > 0
           ? <span style={{ fontSize:'0.6rem', color:MUTED, width:'10px', flexShrink:0, transform:open?'rotate(90deg)':'none', transition:'transform 0.15s', display:'inline-block' }}>▶</span>
           : <span style={{ width:'10px', flexShrink:0 }} />}
-        <span style={{ fontSize:'0.65rem', color, letterSpacing:'0.08em', textTransform:'uppercase', flexShrink:0 }}>{node.productiongroup[0]}</span>
+        <span style={{ fontSize:'0.65rem', color, letterSpacing:'0.08em', textTransform:'uppercase', flexShrink:0 }}>{node.productiongroup === 'EPISODE' ? 'EP' : node.productiongroup === 'ACT' ? 'AC' : node.productiongroup[0]}</span>
         <span style={{ fontSize:'0.78rem', color:isSelected?CREAM:CHARCOAL, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{node.productiontitle}</span>
       </div>
       {open && children.map(child => (
