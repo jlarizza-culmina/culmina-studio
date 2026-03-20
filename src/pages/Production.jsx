@@ -362,7 +362,7 @@ function QueueTab({ selectedTitleId }) {
       .select('productionid, productiontitle, productiongroup, productionstatus, parentproductionid, aimodel')
       .eq('activestatus','A')
       .in('productiongroup',['TITLE','ARC','ACT','EPISODE','SHOT'])
-      .order('productiontitle')
+      .order('sortorder')
     if (data) setAllNodes(data)
     setLoadingTree(false)
   }
@@ -388,7 +388,7 @@ function QueueTab({ selectedTitleId }) {
       .eq('productiongroup','SHOT')
       .in(node.productiongroup === 'SHOT' ? 'productionid' : 'parentproductionid',
           node.productiongroup === 'EPISODE' ? [node.productionid] : ids)
-      .order('productiontitle')
+      .order('sortorder')
 
     if (data) setShots(data)
     setLoadingShots(false)
@@ -544,7 +544,7 @@ function AssemblyTab({ selectedTitleId }) {
   async function loadEpisodes() {
     setLoading(true)
     const { data } = await supabase.from('productions').select('productionid,productiontitle,productionstatus')
-      .eq('activestatus','A').eq('productiongroup','EPISODE').order('productiontitle')
+      .eq('activestatus','A').eq('productiongroup','EPISODE').order('sortorder')
     if (data) { setEpisodes(data); if (data[0]) { setSelectedEpisode(data[0]); loadShots(data[0].productionid) } }
     setLoading(false)
   }
@@ -552,7 +552,7 @@ function AssemblyTab({ selectedTitleId }) {
   async function loadShots(episodeId) {
     const { data } = await supabase.from('productions').select('*')
       .eq('activestatus','A').eq('productiongroup','SHOT').eq('parentproductionid', episodeId)
-      .order('productiontitle')
+      .order('sortorder')
     if (data) setShots(data)
   }
 
