@@ -23,7 +23,10 @@ export default async function handler(req, res) {
       `https://generativelanguage.googleapis.com/v1beta/${opPath}`,
       { headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey } }
     )
-    const data = await response.json()
+    const rawText = await response.text()
+    console.log('[veo-poll] status:', response.status, 'op:', op)
+    console.log('[veo-poll] raw response:', rawText.slice(0, 500))
+    const data = JSON.parse(rawText)
 
     if (!response.ok) {
       return res.status(response.status).json({

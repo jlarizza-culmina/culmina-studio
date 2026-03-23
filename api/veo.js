@@ -38,6 +38,8 @@ export default async function handler(req, res) {
         error: data.error?.message || 'Veo API error', details: data,
       })
     }
+    console.log('[veo] submit response status:', response.status)
+    console.log('[veo] submit response data:', JSON.stringify(data).slice(0, 300))
     if (!data.name) {
       return res.status(500).json({ error: 'No operation name returned', details: data })
     }
