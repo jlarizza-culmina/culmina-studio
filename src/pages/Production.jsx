@@ -367,6 +367,7 @@ function QueueTab({ selectedTitleId }) {
   const [loadingTree, setLoadingTree] = useState(true)
   const [loadingShots, setLoadingShots] = useState(false)
   const [genTarget, setGenTarget]     = useState(null)
+  const [expandedTakes, setExpandedTakes] = useState({})   // { shotId: [take rows] | 'loading' }
 
   useEffect(() => {
     if (!selectedTitleId) return
@@ -424,6 +425,40 @@ function QueueTab({ selectedTitleId }) {
   async function handleRequeue(shot) {
     await supabase.from('productions').update({ productionstatus:'queued', updatedate:new Date().toISOString() }).eq('productionid', shot.productionid)
     setShots(s => s.map(x => x.productionid===shot.productionid ? {...x,productionstatus:'queued'} : x))
+  }
+
+  async function toggleTakes(shotId) {
+    if (expandedTakes[shotId]) {
+      setExpandedTakes(t => { const n = {...t}; delete n[shotId]; return n })
+      return
+    }
+    setExpandedTakes(t => ({ ...t, [shotId]: 'loading' }))
+    const { data } = await supabase.from('productions')
+      .select('*')
+      .eq('activestatus', 'A')
+      .eq('productiongroup', 'TAKE')
+      .eq('parentproductionid', shotId)
+      .order('sortorder')
+    setExpandedTakes(t => ({ ...t, [shotId]: data || [] }))
+  }
+
+  async function handleApproveTake(take, shotId) {
+    await supabase.from('productions').update({ productionstatus: 'approved', updatedate: new Date().toISOString() }).eq('productionid', take.productionid)
+    // Mark the parent shot as approved too
+    await supabase.from('productions').update({ productionstatus: 'approved', updatedate: new Date().toISOString() }).eq('productionid', shotId)
+    setShots(s => s.map(x => x.productionid === shotId ? { ...x, productionstatus: 'approved' } : x))
+    setExpandedTakes(t => ({
+      ...t,
+      [shotId]: (t[shotId] || []).map(tk => tk.productionid === take.productionid ? { ...tk, productionstatus: 'approved' } : tk)
+    }))
+  }
+
+  async function handleRejectTake(take, shotId) {
+    await supabase.from('productions').update({ productionstatus: 'rejected', updatedate: new Date().toISOString() }).eq('productionid', take.productionid)
+    setExpandedTakes(t => ({
+      ...t,
+      [shotId]: (t[shotId] || []).map(tk => tk.productionid === take.productionid ? { ...tk, productionstatus: 'rejected' } : tk)
+    }))
   }
 
   function timeAgo(d) {
@@ -500,34 +535,109 @@ function QueueTab({ selectedTitleId }) {
                     <tr><td colSpan={5} style={{ padding:'32px', textAlign:'center', color:MUTED, fontSize:'0.82rem' }}>Loading...</td></tr>
                   ) : shots.length===0 ? (
                     <tr><td colSpan={5} style={{ padding:'32px', textAlign:'center', color:MUTED, fontSize:'0.82rem' }}>No shots found under this node.</td></tr>
-                  ) : shots.map((shot, i) => (
-                    <tr key={shot.productionid}
-                      style={{ borderBottom:i<shots.length-1?`1px solid ${BORDER}`:'none' }}
-                      onMouseEnter={e=>e.currentTarget.style.background='rgba(201,146,74,0.02)'}
-                      onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
-                      <td style={{ padding:'12px 14px', color:CREAM, fontSize:'0.82rem' }}>{shot.productiontitle}</td>
-                      <td style={{ padding:'12px 14px', color:CHARCOAL, fontSize:'0.78rem' }}>{shot.aimodel||'--'}</td>
-                      <td style={{ padding:'12px 14px' }}><StatusBadge status={shot.productionstatus} /></td>
-                      <td style={{ padding:'12px 14px', color:MUTED, fontSize:'0.75rem' }}>{timeAgo(shot.updatedate)}</td>
-                      <td style={{ padding:'12px 14px' }}>
-                        <div style={{ display:'flex', gap:'12px', alignItems:'center' }}>
-                          <button onClick={()=>setGenTarget(shot)}
-                            style={{ background:'none', border:'none', color:GOLD, fontSize:'0.72rem', cursor:'pointer', padding:0, whiteSpace:'nowrap' }}>
-                            Generate Takes
-                          </button>
-                          {(shot.productionstatus==='complete'||shot.productionstatus==='completed') && (
-                            <button onClick={()=>handleApprove(shot)} style={{ background:'none', border:'none', color:GREEN, fontSize:'0.72rem', cursor:'pointer', padding:0 }}>Approve</button>
-                          )}
-                          {shot.productionstatus==='queued' && (
-                            <button onClick={()=>handleRequeue(shot)} style={{ background:'none', border:'none', color:CHARCOAL, fontSize:'0.72rem', cursor:'pointer', padding:0 }}>Cancel</button>
-                          )}
-                          {shot.productionstatus==='error' && (
-                            <button onClick={()=>handleRequeue(shot)} style={{ background:'none', border:'none', color:RED, fontSize:'0.72rem', cursor:'pointer', padding:0 }}>Re-queue</button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  ) : shots.map((shot, i) => {
+                    const takes     = expandedTakes[shot.productionid]
+                    const isOpen    = !!takes
+                    const isLoading = takes === 'loading'
+                    const takeList  = Array.isArray(takes) ? takes : []
+                    const hasTakes  = shot.productionstatus === 'completed' || shot.productionstatus === 'approved' || shot.productionstatus === 'in_production'
+                    return (
+                      <>
+                        <tr key={shot.productionid}
+                          style={{ borderBottom: (!isOpen && i < shots.length-1) ? `1px solid ${BORDER}` : 'none' }}
+                          onMouseEnter={e=>e.currentTarget.style.background='rgba(201,146,74,0.02)'}
+                          onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                          <td style={{ padding:'12px 14px', color:CREAM, fontSize:'0.82rem' }}>
+                            <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
+                              {hasTakes && (
+                                <button onClick={() => toggleTakes(shot.productionid)}
+                                  style={{ background:'none', border:'none', color:MUTED, cursor:'pointer', padding:0, fontSize:'0.65rem', transform: isOpen ? 'rotate(90deg)' : 'none', transition:'transform 0.15s' }}>▶</button>
+                              )}
+                              {shot.productiontitle}
+                            </div>
+                          </td>
+                          <td style={{ padding:'12px 14px', color:CHARCOAL, fontSize:'0.78rem' }}>{shot.aimodel||'--'}</td>
+                          <td style={{ padding:'12px 14px' }}><StatusBadge status={shot.productionstatus} /></td>
+                          <td style={{ padding:'12px 14px', color:MUTED, fontSize:'0.75rem' }}>{timeAgo(shot.updatedate)}</td>
+                          <td style={{ padding:'12px 14px' }}>
+                            <div style={{ display:'flex', gap:'12px', alignItems:'center' }}>
+                              <button onClick={()=>setGenTarget(shot)}
+                                style={{ background:'none', border:'none', color:GOLD, fontSize:'0.72rem', cursor:'pointer', padding:0, whiteSpace:'nowrap' }}>
+                                Generate Takes
+                              </button>
+                              {hasTakes && (
+                                <button onClick={() => toggleTakes(shot.productionid)}
+                                  style={{ background:'none', border:'none', color:CHARCOAL, fontSize:'0.72rem', cursor:'pointer', padding:0, whiteSpace:'nowrap' }}>
+                                  {isOpen ? 'Hide Takes' : 'View Takes'}
+                                </button>
+                              )}
+                              {shot.productionstatus==='queued' && (
+                                <button onClick={()=>handleRequeue(shot)} style={{ background:'none', border:'none', color:CHARCOAL, fontSize:'0.72rem', cursor:'pointer', padding:0 }}>Cancel</button>
+                              )}
+                              {shot.productionstatus==='error' && (
+                                <button onClick={()=>handleRequeue(shot)} style={{ background:'none', border:'none', color:RED, fontSize:'0.72rem', cursor:'pointer', padding:0 }}>Re-queue</button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+
+                        {/* ── Inline Takes Viewer ── */}
+                        {isOpen && (
+                          <tr key={`takes-${shot.productionid}`}>
+                            <td colSpan={5} style={{ padding:'0 0 16px 40px', background:'rgba(0,0,0,0.2)' }}>
+                              {isLoading ? (
+                                <div style={{ padding:'16px', color:MUTED, fontSize:'0.8rem' }}>Loading takes…</div>
+                              ) : takeList.length === 0 ? (
+                                <div style={{ padding:'16px', color:MUTED, fontSize:'0.8rem' }}>No takes yet — click Generate Takes to create one.</div>
+                              ) : (
+                                <div style={{ display:'flex', flexDirection:'column', gap:'12px', paddingTop:'12px' }}>
+                                  {takeList.map((take, ti) => (
+                                    <div key={take.productionid}
+                                      style={{ background:SURFACE2, border:`1px solid ${BORDER}`, padding:'14px 16px', marginRight:'24px' }}>
+                                      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom: take.videourl ? '10px' : 0 }}>
+                                        <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
+                                          <span style={{ color:CREAM, fontSize:'0.82rem' }}>{take.productiontitle}</span>
+                                          <span style={{ color:MUTED, fontSize:'0.72rem' }}>{timeAgo(take.updatedate)}</span>
+                                        </div>
+                                        <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
+                                          <StatusBadge status={take.productionstatus} />
+                                          {take.productionstatus !== 'approved' && take.productionstatus !== 'rejected' && take.videourl && (
+                                            <>
+                                              <button onClick={() => handleApproveTake(take, shot.productionid)}
+                                                style={{ background:'none', border:`1px solid ${GREEN}`, color:GREEN, padding:'3px 10px', fontSize:'0.68rem', cursor:'pointer', fontFamily:'DM Sans, sans-serif', letterSpacing:'0.08em', textTransform:'uppercase' }}>
+                                                Approve
+                                              </button>
+                                              <button onClick={() => handleRejectTake(take, shot.productionid)}
+                                                style={{ background:'none', border:`1px solid ${BORDER}`, color:CHARCOAL, padding:'3px 10px', fontSize:'0.68rem', cursor:'pointer', fontFamily:'DM Sans, sans-serif', letterSpacing:'0.08em', textTransform:'uppercase' }}>
+                                                Reject
+                                              </button>
+                                            </>
+                                          )}
+                                          {take.productionstatus === 'approved' && (
+                                            <span style={{ fontSize:'0.7rem', color:GREEN }}>✓ Approved</span>
+                                          )}
+                                        </div>
+                                      </div>
+                                      {take.videourl && (
+                                        <video
+                                          src={`/api/veo-proxy?uri=${encodeURIComponent(take.videourl)}`}
+                                          controls
+                                          style={{ width:'100%', maxHeight:'320px', background:'#000', display:'block', borderRadius:'2px' }}
+                                        />
+                                      )}
+                                      {take.notes && (
+                                        <div style={{ fontSize:'0.72rem', color:RED, marginTop:'8px' }}>{take.notes}</div>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        )}
+                      </>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
