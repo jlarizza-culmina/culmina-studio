@@ -81,8 +81,10 @@ function GenTakesModal({ shot, onClose, onDone }) {
   const [takes,        setTakes]        = useState([])
   const [assets,       setAssets]       = useState([])
   const [loadingAssets,setLoadingAssets]= useState(true)
-  const pollRef  = useRef(null)
-  const takesRef = useRef([])
+  const pollRef    = useRef(null)
+  const takesRef  = useRef([])
+  const pollCount = useRef(0)
+  const MAX_POLLS = 60  // 60 x 8s = 8 min max
 
   useEffect(() => {
     loadAssets()
@@ -173,7 +175,22 @@ function GenTakesModal({ shot, onClose, onDone }) {
   }
 
   function startPolling() {
+    pollCount.current = 0
     pollRef.current = setInterval(async () => {
+      pollCount.current += 1
+      if (pollCount.current > MAX_POLLS) {
+        clearInterval(pollRef.current)
+        // Mark all still-pending takes as error
+        const stillPending = takesRef.current.filter(t => t.status === 'in_production')
+        for (const t of stillPending) {
+          await supabase.from('productions').update({ productionstatus: 'error', notes: 'Timed out after 8 minutes', updatedate: new Date().toISOString() }).eq('productionid', t.productionid)
+        }
+        const timedOut = takesRef.current.map(t => t.status === 'in_production' ? { ...t, status: 'error', error: 'Timed out after 8 minutes' } : t)
+        takesRef.current = timedOut
+        setTakes([...timedOut])
+        setPhase('done')
+        return
+      }
       const pending = takesRef.current.filter(t => t.status === 'in_production' && t.operationName)
       if (pending.length === 0) {
         clearInterval(pollRef.current)
