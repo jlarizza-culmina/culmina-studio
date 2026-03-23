@@ -58,6 +58,9 @@ function TreeNode({ node, allNodes, selectedId, onSelect, depth=0 }) {
           ? <span style={{ fontSize:'0.6rem', color:MUTED, width:'10px', flexShrink:0, transform:open?'rotate(90deg)':'none', transition:'transform 0.15s', display:'inline-block' }}>▶</span>
           : <span style={{ width:'10px', flexShrink:0 }} />}
         <span style={{ fontSize:'0.65rem', color, letterSpacing:'0.08em', textTransform:'uppercase', flexShrink:0 }}>{node.productiongroup === 'EPISODE' ? 'EP' : node.productiongroup === 'ACT' ? 'AC' : node.productiongroup[0]}</span>
+        {node.productiongroup === 'SHOT' && (
+          <span style={{ fontSize:'0.6rem', marginLeft:'2px' }}>{node.productionstatus === 'approved' ? '🟢' : (node.productionstatus === 'completed' || node.productionstatus === 'in_production') ? '🟡' : '⚪'}</span>
+        )}
         <span style={{ fontSize:'0.78rem', color:isSelected?CREAM:CHARCOAL, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{node.productiontitle}</span>
       </div>
       {open && children.map(child => (
@@ -110,13 +113,16 @@ function GenTakesModal({ shot, onClose, onDone }) {
       updatedate: new Date().toISOString(),
     }).eq('productionid', shot.productionid)
 
+    const { count: existingTakeCount } = await supabase.from('productions').select('productionid', { count: 'exact', head: true }).eq('parentproductionid', shot.productionid).eq('productiongroup', 'TAKE')
+    const takeOffset = existingTakeCount || 0
     const newTakes = []
     for (let i = 0; i < parseInt(form.variations); i++) {
+      const takeNumber = takeOffset + i + 1
       // Insert TAKE row (need .select() to get productionid)
       const { data: takeData, error: takeErr } = await supabase
         .from('productions')
         .insert([{
-          productiontitle:    `Take ${i + 1}`,
+          productiontitle:    `Take ${takeNumber}`,
           productiongroup:    'TAKE',
           parentproductionid: shot.productionid,
           aimodel:            form.model,
@@ -130,7 +136,7 @@ function GenTakesModal({ shot, onClose, onDone }) {
         .single()
 
       if (takeErr) {
-        newTakes.push({ tempId: i, name: `Take ${i + 1}`, status: 'error', error: takeErr.message })
+        newTakes.push({ tempId: i, name: `Take ${takeNumber}`, status: 'error', error: takeErr.message })
         continue
       }
       const takeId = takeData.productionid
@@ -159,13 +165,13 @@ function GenTakesModal({ shot, onClose, onDone }) {
           productionstatus: 'error', notes: opResult.error,
           updatedate: new Date().toISOString(),
         }).eq('productionid', takeId)
-        newTakes.push({ productionid: takeId, name: `Take ${i + 1}`, status: 'error', error: opResult.error })
+        newTakes.push({ productionid: takeId, name: `Take ${takeNumber}`, status: 'error', error: opResult.error })
       } else {
         await supabase.from('productions').update({
           operationname: opResult.operationName,
           updatedate: new Date().toISOString(),
         }).eq('productionid', takeId)
-        newTakes.push({ productionid: takeId, name: `Take ${i + 1}`, status: 'in_production', operationName: opResult.operationName })
+        newTakes.push({ productionid: takeId, name: `Take ${takeNumber}`, status: 'in_production', operationName: opResult.operationName })
       }
     }
 
@@ -358,6 +364,67 @@ function GenTakesModal({ shot, onClose, onDone }) {
   )
 }
 
+
+// ─── Take Card ───────────────────────────────────────────────────────────────
+function TakeCard({ take, shotId, onApprove, onReject, onDelete, timeAgo }) {
+  const [showPrompt, setShowPrompt] = useState(false)
+  const [notes, setNotes] = useState(take.productiontakenotes || '')
+  const [savingNotes, setSavingNotes] = useState(false)
+  const [notesSaved, setNotesSaved] = useState(false)
+  const isRejected = take.productionstatus === 'rejected'
+  const isApproved = take.productionstatus === 'approved'
+  const hasVideo = !!take.videourl
+  async function saveNotes() {
+    setSavingNotes(true)
+    await supabase.from('productions').update({ productiontakenotes: notes, updatedate: new Date().toISOString() }).eq('productionid', take.productionid)
+    setSavingNotes(false); setNotesSaved(true); setTimeout(() => setNotesSaved(false), 2000)
+  }
+  return (
+    <div style={{ background:SURFACE2, border:`1px solid ${isApproved?'rgba(74,156,122,0.4)':isRejected?'rgba(92,87,78,0.3)':BORDER}`, padding:'14px 16px', marginRight:'24px', opacity:isRejected?0.55:1, transition:'opacity 0.2s', marginBottom:'8px' }}>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'10px' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
+          <span style={{ color:isRejected?MUTED:CREAM, fontSize:'0.85rem', fontWeight:isApproved?500:400 }}>{take.productiontitle}</span>
+          <span style={{ color:MUTED, fontSize:'0.72rem' }}>{timeAgo(take.updatedate)}</span>
+          <span style={{ color:MUTED, fontSize:'0.72rem' }}>{take.aimodel||''}</span>
+        </div>
+        <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
+          <StatusBadge status={take.productionstatus} />
+          {!isApproved && !isRejected && hasVideo && (
+            <button onClick={() => onApprove(take, shotId)} style={{ background:'none', border:`1px solid ${GREEN}`, color:GREEN, padding:'3px 10px', fontSize:'0.67rem', cursor:'pointer', fontFamily:'DM Sans, sans-serif', letterSpacing:'0.08em', textTransform:'uppercase' }}>Approve</button>
+          )}
+          {!isApproved && !isRejected && hasVideo && (
+            <button onClick={() => onReject(take, shotId)} style={{ background:'none', border:`1px solid ${BORDER}`, color:CHARCOAL, padding:'3px 10px', fontSize:'0.67rem', cursor:'pointer', fontFamily:'DM Sans, sans-serif', letterSpacing:'0.08em', textTransform:'uppercase' }}>Reject</button>
+          )}
+          {isRejected && (
+            <button onClick={() => onApprove(take, shotId)} style={{ background:'none', border:`1px solid ${BORDER}`, color:CHARCOAL, padding:'3px 8px', fontSize:'0.65rem', cursor:'pointer', fontFamily:'DM Sans, sans-serif' }}>Un-reject</button>
+          )}
+          <button onClick={() => onDelete(take, shotId)} style={{ background:'none', border:'1px solid rgba(200,75,49,0.3)', color:RED, padding:'3px 8px', fontSize:'0.65rem', cursor:'pointer', fontFamily:'DM Sans, sans-serif', letterSpacing:'0.06em', textTransform:'uppercase' }}>Delete</button>
+        </div>
+      </div>
+      {hasVideo && <video src={`/api/veo-proxy?uri=${encodeURIComponent(take.videourl)}`} controls style={{ width:'100%', maxHeight:'320px', background:'#000', display:'block', borderRadius:'2px', marginBottom:'12px' }} />}
+      {take.notes && !hasVideo && <div style={{ fontSize:'0.72rem', color:RED, marginBottom:'10px' }}>{take.notes}</div>}
+      {take.prompt && (
+        <div style={{ marginBottom:'10px' }}>
+          <button onClick={() => setShowPrompt(p=>!p)} style={{ background:'none', border:'none', color:MUTED, fontSize:'0.68rem', cursor:'pointer', padding:0, letterSpacing:'0.06em', textTransform:'uppercase', display:'flex', alignItems:'center', gap:'4px' }}>
+            <span style={{ fontSize:'0.55rem', transform:showPrompt?'rotate(90deg)':'none', display:'inline-block', transition:'transform 0.15s' }}>▶</span>
+            {showPrompt ? 'Hide Prompt' : 'View Prompt'}
+          </button>
+          {showPrompt && <div style={{ marginTop:'8px', padding:'10px 12px', background:'rgba(0,0,0,0.3)', border:`1px solid ${BORDER}`, fontSize:'0.75rem', color:CHARCOAL, lineHeight:1.6, whiteSpace:'pre-wrap' }}>{take.prompt}</div>}
+        </div>
+      )}
+      <div>
+        <div style={{ fontSize:'0.67rem', color:CHARCOAL, letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:'6px' }}>Production Notes</div>
+        <textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Add notes about this take…" rows={2}
+          style={{ width:'100%', background:'rgba(0,0,0,0.25)', border:`1px solid ${BORDER}`, color:CREAM, padding:'8px 10px', fontFamily:'DM Sans, sans-serif', fontSize:'0.78rem', outline:'none', resize:'vertical', lineHeight:1.5, boxSizing:'border-box' }} />
+        <div style={{ display:'flex', alignItems:'center', gap:'10px', marginTop:'6px' }}>
+          <button onClick={saveNotes} disabled={savingNotes} style={{ background:'none', border:`1px solid ${BORDER}`, color:CHARCOAL, padding:'4px 14px', fontSize:'0.67rem', cursor:'pointer', fontFamily:'DM Sans, sans-serif', letterSpacing:'0.08em', textTransform:'uppercase', opacity:savingNotes?0.6:1 }}>{savingNotes?'Saving…':'Save Notes'}</button>
+          {notesSaved && <span style={{ fontSize:'0.7rem', color:GREEN }}>✓ Saved</span>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Queue Tab ───────────────────────────────────────────────────────────────
 
 function QueueTab({ selectedTitleId }) {
@@ -437,8 +504,9 @@ function QueueTab({ selectedTitleId }) {
       .select('*')
       .eq('activestatus', 'A')
       .eq('productiongroup', 'TAKE')
+      .eq('activestatus', 'A')
       .eq('parentproductionid', shotId)
-      .order('sortorder')
+      .order('createdate', { ascending: false })
     setExpandedTakes(t => ({ ...t, [shotId]: data || [] }))
   }
 
@@ -455,10 +523,12 @@ function QueueTab({ selectedTitleId }) {
 
   async function handleRejectTake(take, shotId) {
     await supabase.from('productions').update({ productionstatus: 'rejected', updatedate: new Date().toISOString() }).eq('productionid', take.productionid)
-    setExpandedTakes(t => ({
-      ...t,
-      [shotId]: (t[shotId] || []).map(tk => tk.productionid === take.productionid ? { ...tk, productionstatus: 'rejected' } : tk)
-    }))
+    setExpandedTakes(t => ({ ...t, [shotId]: (t[shotId] || []).map(tk => tk.productionid === take.productionid ? { ...tk, productionstatus: 'rejected' } : tk) }))
+  }
+
+  async function handleDeleteTake(take, shotId) {
+    await supabase.from('productions').update({ activestatus: 'I', updatedate: new Date().toISOString() }).eq('productionid', take.productionid)
+    setExpandedTakes(t => ({ ...t, [shotId]: (t[shotId] || []).filter(tk => tk.productionid !== take.productionid) }))
   }
 
   function timeAgo(d) {
@@ -592,43 +662,15 @@ function QueueTab({ selectedTitleId }) {
                               ) : (
                                 <div style={{ display:'flex', flexDirection:'column', gap:'12px', paddingTop:'12px' }}>
                                   {takeList.map((take, ti) => (
-                                    <div key={take.productionid}
-                                      style={{ background:SURFACE2, border:`1px solid ${BORDER}`, padding:'14px 16px', marginRight:'24px' }}>
-                                      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom: take.videourl ? '10px' : 0 }}>
-                                        <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
-                                          <span style={{ color:CREAM, fontSize:'0.82rem' }}>{take.productiontitle}</span>
-                                          <span style={{ color:MUTED, fontSize:'0.72rem' }}>{timeAgo(take.updatedate)}</span>
-                                        </div>
-                                        <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
-                                          <StatusBadge status={take.productionstatus} />
-                                          {take.productionstatus !== 'approved' && take.productionstatus !== 'rejected' && take.videourl && (
-                                            <>
-                                              <button onClick={() => handleApproveTake(take, shot.productionid)}
-                                                style={{ background:'none', border:`1px solid ${GREEN}`, color:GREEN, padding:'3px 10px', fontSize:'0.68rem', cursor:'pointer', fontFamily:'DM Sans, sans-serif', letterSpacing:'0.08em', textTransform:'uppercase' }}>
-                                                Approve
-                                              </button>
-                                              <button onClick={() => handleRejectTake(take, shot.productionid)}
-                                                style={{ background:'none', border:`1px solid ${BORDER}`, color:CHARCOAL, padding:'3px 10px', fontSize:'0.68rem', cursor:'pointer', fontFamily:'DM Sans, sans-serif', letterSpacing:'0.08em', textTransform:'uppercase' }}>
-                                                Reject
-                                              </button>
-                                            </>
-                                          )}
-                                          {take.productionstatus === 'approved' && (
-                                            <span style={{ fontSize:'0.7rem', color:GREEN }}>✓ Approved</span>
-                                          )}
-                                        </div>
-                                      </div>
-                                      {take.videourl && (
-                                        <video
-                                          src={`/api/veo-proxy?uri=${encodeURIComponent(take.videourl)}`}
-                                          controls
-                                          style={{ width:'100%', maxHeight:'320px', background:'#000', display:'block', borderRadius:'2px' }}
-                                        />
-                                      )}
-                                      {take.notes && (
-                                        <div style={{ fontSize:'0.72rem', color:RED, marginTop:'8px' }}>{take.notes}</div>
-                                      )}
-                                    </div>
+                                    <TakeCard
+                                      key={take.productionid}
+                                      take={take}
+                                      shotId={shot.productionid}
+                                      onApprove={handleApproveTake}
+                                      onReject={handleRejectTake}
+                                      onDelete={handleDeleteTake}
+                                      timeAgo={timeAgo}
+                                    />
                                   ))}
                                 </div>
                               )}
@@ -747,7 +789,9 @@ export default function Production() {
   const [selectedTitleId, setSelectedTitleId] = useState('')
 
   useEffect(() => {
-    supabase.from('productions').select('productionid,productiontitle').eq('productiongroup','TITLE').eq('activestatus','A')
+    supabase.from('productions').select('productionid,productiontitle,productionstatus').eq('productiongroup','TITLE').eq('activestatus','A')
+      .in('productionstatus',['Pre-Production','Production','Post-Production'])
+      .order('productiontitle')
       .then(({ data }) => { if (data) { setTitles(data); if (data[0]) setSelectedTitleId(String(data[0].productionid)) } })
   }, [])
 
