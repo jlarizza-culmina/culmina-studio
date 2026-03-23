@@ -20,9 +20,10 @@ export default async function handler(req, res) {
   const opPath = op
 
   try {
+    // Poll via fetchLongRunningOperation — supports API key auth
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/${opPath}`,
-      { headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey } }
+      `https://generativelanguage.googleapis.com/v1beta/${opPath}:fetchLongRunningOperation?key=${apiKey}`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }
     )
     const rawText = await response.text()
     console.log('[veo-poll] status:', response.status, 'op:', op)
