@@ -15,7 +15,9 @@ export default async function handler(req, res) {
 
   try {
     const decoded     = decodeURIComponent(uri)
-    const downloadUrl = `${decoded}?key=${apiKey}&alt=media`
+    // URI may already contain ?alt=media — append key as additional param
+    const sep = decoded.includes('?') ? '&' : '?'
+    const downloadUrl = `${decoded}${sep}key=${apiKey}`
     const response    = await fetch(downloadUrl)
     if (!response.ok) {
       return res.status(response.status).json({ error: 'Failed to fetch video from Google' })
