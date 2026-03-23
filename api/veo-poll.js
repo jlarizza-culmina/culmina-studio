@@ -9,7 +9,7 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'GET')  return res.status(405).json({ error: 'GET only' })
 
-  const apiKey = process.env.GOOGLE_IMAGEN_KEY
+  const apiKey = process.env.GOOGLE_IMAGEN_KEY || process.env.VITE_GOOGLE_IMAGEN_KEY
   if (!apiKey) return res.status(500).json({ error: 'GOOGLE_IMAGEN_KEY not configured' })
 
   const { op } = req.query

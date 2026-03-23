@@ -7,7 +7,7 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   if (req.method === 'OPTIONS') { res.status(200).end(); return }
 
-  const apiKey = process.env.GOOGLE_IMAGEN_KEY
+  const apiKey = process.env.GOOGLE_IMAGEN_KEY || process.env.VITE_GOOGLE_IMAGEN_KEY
   if (!apiKey) return res.status(500).json({ error: 'GOOGLE_IMAGEN_KEY not configured' })
 
   const { uri } = req.query
