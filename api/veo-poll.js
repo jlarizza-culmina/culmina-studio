@@ -16,10 +16,8 @@ export default async function handler(req, res) {
   if (!op) return res.status(400).json({ error: 'op parameter required' })
 
   // Normalize — op may be "operations/abc" or just "abc"
-  // Strip model prefix if present — poll URL must be bare operations/{id}
-  // e.g. "models/veo-3.1.../operations/abc" -> "operations/abc"
-  const opId = op.includes('/operations/') ? op.split('/operations/')[1] : op.replace('operations/', '')
-  const opPath = `operations/${opId}`
+  // Use full operation name as returned by Veo — e.g. models/veo-3.1.../operations/abc
+  const opPath = op
 
   try {
     const response = await fetch(
