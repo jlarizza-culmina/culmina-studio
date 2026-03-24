@@ -1007,8 +1007,8 @@ const [viewMode,     setViewMode]     = useState('grid')
   async function handleProdFilter(titleId) {
     setProdFilter(titleId)
     if (titleId === 'all') { setProdAssetIds(null); return }
-    const { data } = await supabase.from('production_assets')
-      .select('assetid').eq('productionid', parseInt(titleId)).eq('activestatus','A')
+    const { data } = await supabase.from('assets')
+      .select('assetid').eq('titleproductionid', parseInt(titleId)).eq('activestatus','A')
     setProdAssetIds(data ? data.map(r => r.assetid) : [])
   }
 
