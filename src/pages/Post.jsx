@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import EpisodeAssembler from '../components/postproduction/EpisodeAssembler'
 
@@ -233,51 +233,85 @@ function EpisodeEditor({ episode, onBack, onStatusChange }) {
 }
 
 export default function Post() {
-  const [episodes, setEpisodes]   = useState([])
-  const [loading, setLoading]     = useState(true)
-  const [titles, setTitles]       = useState([])
+  const [episodes, setEpisodes]         = useState([])
+  const [loading, setLoading]           = useState(true)
+  const [titles, setTitles]             = useState([])
   const [selectedTitleId, setSelectedTitleId] = useState('')
-  const [filter, setFilter]       = useState('all')
+  const [filter, setFilter]             = useState('all')
   const [selectedEpisode, setSelectedEpisode] = useState(null)
-  const [activeTab, setActiveTab] = useState('queue')
+  const [activeTab, setActiveTab]       = useState('queue')
+  const [expandedArcs, setExpandedArcs] = useState({})
+  const [expandedEps, setExpandedEps]   = useState({})
+  const [shotsMap, setShotsMap]         = useState({})
+  const [takesMap, setTakesMap]         = useState({})
+  const [arcs, setArcs]                 = useState([])
 
   useEffect(() => {
-    supabase.from('productions').select('productionid,productiontitle').eq('productiongroup','TITLE').eq('activestatus','A')
+    supabase.from('productions').select('productionid,productiontitle')
+      .eq('productiongroup','TITLE').eq('activestatus','A').order('productiontitle')
       .then(({ data }) => { if (data) { setTitles(data); if (data[0]) setSelectedTitleId(String(data[0].productionid)) } })
   }, [])
 
-  useEffect(() => { if (selectedTitleId) loadEpisodes() }, [selectedTitleId])
+  useEffect(() => { if (selectedTitleId) loadTree() }, [selectedTitleId])
 
-  async function loadEpisodes() {
+  async function loadTree() {
     setLoading(true)
-    // Get all episode-group productions under this title by walking the tree
-    const { data: allNodes } = await supabase.from('productions')
-      .select('productionid,productiontitle,productiongroup,productionstatus,parentproductionid,synopsis,updatedate,createdate')
+    setExpandedArcs({}); setExpandedEps({}); setShotsMap({}); setTakesMap({})
+    const { data: nodes } = await supabase.from('productions')
+      .select('productionid,productiontitle,productiongroup,productionstatus,parentproductionid,updatedate')
       .eq('activestatus','A')
       .in('productiongroup',['ARC','ACT','EPISODE'])
-
-    if (!allNodes) { setLoading(false); return }
-
-    // Collect episode IDs under selected title
-    function getDescendants(parentId, group) {
-      return allNodes.filter(n => n.parentproductionid===parentId && (!group || n.productiongroup===group))
-    }
-
-    const arcs  = getDescendants(parseInt(selectedTitleId), 'ARC')
-    const acts  = arcs.flatMap(arc => getDescendants(arc.productionid, 'ACT'))
-    const eps   = [
-      ...getDescendants(parseInt(selectedTitleId), 'EPISODE'),
-      ...arcs.flatMap(arc => getDescendants(arc.productionid, 'EPISODE')),
-      ...acts.flatMap(act => getDescendants(act.productionid, 'EPISODE')),
-    ]
-
-    setEpisodes(eps)
+    if (!nodes) { setLoading(false); return }
+    const ch = (pid, grp) => nodes.filter(n => n.parentproductionid===pid && n.productiongroup===grp)
+    const titleId = parseInt(selectedTitleId)
+    const arcRows = ch(titleId,'ARC')
+    const arcsWithEps = arcRows.map(arc => {
+      const acts = ch(arc.productionid,'ACT')
+      const eps = [
+        ...ch(arc.productionid,'EPISODE'),
+        ...acts.flatMap(act => ch(act.productionid,'EPISODE')),
+      ].sort((a,b)=>a.productionid-b.productionid)
+      return { ...arc, episodes: eps }
+    })
+    const directEps = ch(titleId,'EPISODE').sort((a,b)=>a.productionid-b.productionid)
+    if (directEps.length) arcsWithEps.unshift({ productionid:-1, productiontitle:'Episodes', episodes:directEps })
+    setArcs(arcsWithEps)
+    setEpisodes(arcsWithEps.flatMap(a=>a.episodes))
     setLoading(false)
   }
 
+  async function loadShots(epId) {
+    if (shotsMap[epId]) return
+    setShotsMap(m=>({...m,[epId]:null}))
+    const { data: shots } = await supabase.from('productions')
+      .select('productionid,productiontitle,productionstatus,videourl')
+      .eq('productiongroup','SHOT').eq('parentproductionid',epId).eq('activestatus','A')
+      .order('productionid')
+    setShotsMap(m=>({...m,[epId]:shots||[]}))
+    if (shots?.length) {
+      const ids = shots.map(s=>s.productionid)
+      const { data: takes } = await supabase.from('productions')
+        .select('productionid,productiontitle,productionstatus,videourl,parentproductionid')
+        .eq('productiongroup','TAKE').eq('activestatus','A').in('parentproductionid',ids)
+      const tm = {}
+      for (const t of (takes||[])) {
+        if (!tm[t.parentproductionid]) tm[t.parentproductionid]=[]
+        tm[t.parentproductionid].push(t)
+      }
+      setTakesMap(m=>({...m,...tm}))
+    }
+  }
+
+  function toggleArc(id) { setExpandedArcs(m=>({...m,[id]:!m[id]})) }
+  function toggleEp(id) {
+    const opening = !expandedEps[id]
+    setExpandedEps(m=>({...m,[id]:opening}))
+    if (opening) loadShots(id)
+  }
+
   function handleStatusChange(productionid, newStatus) {
-    setEpisodes(eps => eps.map(e => e.productionid===productionid ? {...e, productionstatus:newStatus} : e))
-    if (selectedEpisode?.productionid===productionid) setSelectedEpisode(e => ({...e, productionstatus:newStatus}))
+    setEpisodes(eps=>eps.map(e=>e.productionid===productionid?{...e,productionstatus:newStatus}:e))
+    if (selectedEpisode?.productionid===productionid) setSelectedEpisode(e=>({...e,productionstatus:newStatus}))
   }
 
   function timeAgo(d) {
@@ -288,67 +322,150 @@ export default function Post() {
     return `${Math.floor(h/24)}d ago`
   }
 
-  if (activeTab === 'queue' && selectedEpisode) {
+  if (activeTab==='queue' && selectedEpisode) {
     return <EpisodeEditor episode={selectedEpisode} onBack={()=>setSelectedEpisode(null)} onStatusChange={handleStatusChange} />
   }
 
-  const filtered = episodes.filter(e => filter==='all' || e.productionstatus===filter)
-
   return (
     <div style={{ fontFamily:'DM Sans, sans-serif', color:CREAM }}>
-      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'28px', flexWrap:'wrap', gap:'12px' }}>
+
+      {/* Header */}
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'20px', flexWrap:'wrap', gap:'12px' }}>
         <h1 style={{ fontFamily:'Cormorant Garamond, serif', fontSize:'2rem', fontWeight:300, color:CREAM, margin:0 }}>Post Production</h1>
-        <div style={{ display:'flex', alignItems:'center', gap:'12px', flexWrap:'wrap' }}>
-          <select value={selectedTitleId} onChange={e=>setSelectedTitleId(e.target.value)}
-            style={{ background:SURFACE, border:`1px solid ${BORDER}`, color:CREAM, padding:'7px 14px', fontFamily:'DM Sans, sans-serif', fontSize:'0.8rem', outline:'none', cursor:'pointer' }}>
-            {titles.map(t=><option key={t.productionid} value={t.productionid}>{t.productiontitle}</option>)}
-          </select>
-          <div style={{ display:'flex', gap:'2px' }}>
+        <select value={selectedTitleId} onChange={e=>setSelectedTitleId(e.target.value)}
+          style={{ background:SURFACE, border:`1px solid ${BORDER}`, color:CREAM, padding:'7px 14px', fontFamily:'DM Sans, sans-serif', fontSize:'0.8rem', outline:'none', cursor:'pointer' }}>
+          {titles.map(t=><option key={t.productionid} value={t.productionid}>{t.productiontitle}</option>)}
+        </select>
+      </div>
+
+      {/* Top tabs */}
+      <div style={{ display:'flex', borderBottom:`1px solid ${BORDER}`, marginBottom:'24px' }}>
+        {[['queue','Post Queue'],['assemble','Assemble']].map(([id,label])=>(
+          <button key={id} onClick={()=>setActiveTab(id)}
+            style={{ background:'none', border:'none', borderBottom:activeTab===id?`2px solid ${GOLD}`:'2px solid transparent',
+              color:activeTab===id?GOLD:CHARCOAL, padding:'10px 22px', cursor:'pointer',
+              fontFamily:'DM Sans, sans-serif', fontSize:'0.78rem', letterSpacing:'0.08em',
+              textTransform:'uppercase', marginBottom:'-1px' }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Assemble tab */}
+      {activeTab==='assemble' && <EpisodeAssembler />}
+
+      {/* Queue tab */}
+      {activeTab==='queue' && (
+        <div>
+          <div style={{ display:'flex', gap:'2px', marginBottom:'16px', flexWrap:'wrap' }}>
             {['all','development','in_production','in_edit','awaiting','approved','exported'].map(s=>(
               <button key={s} onClick={()=>setFilter(s)}
-                style={{ background:filter===s?'rgba(201,146,74,0.12)':'none', border:`1px solid ${filter===s?'rgba(201,146,74,0.3)':BORDER}`, color:filter===s?GOLD:CHARCOAL, padding:'6px 12px', cursor:'pointer', fontFamily:'DM Sans, sans-serif', fontSize:'0.72rem', letterSpacing:'0.06em', textTransform:'capitalize' }}>
+                style={{ background:filter===s?'rgba(201,146,74,0.12)':'none', border:`1px solid ${filter===s?'rgba(201,146,74,0.3)':BORDER}`,
+                  color:filter===s?GOLD:CHARCOAL, padding:'6px 12px', cursor:'pointer',
+                  fontFamily:'DM Sans, sans-serif', fontSize:'0.72rem', letterSpacing:'0.06em', textTransform:'capitalize' }}>
                 {s.replace(/_/g,' ')}
               </button>
             ))}
           </div>
-        </div>
-      </div>
 
-      <div style={{ border:`1px solid ${BORDER}` }}>
-        <table style={{ width:'100%', borderCollapse:'collapse' }}>
-          <thead>
-            <tr style={{ borderBottom:`1px solid ${BORDER}`, background:SURFACE2 }}>
-              {['Episode','Status','Updated','Actions'].map(h=>(
-                <th key={h} style={{ padding:'11px 16px', textAlign:'left', fontSize:'0.68rem', color:CHARCOAL, letterSpacing:'0.1em', textTransform:'uppercase', fontWeight:400 }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr><td colSpan={4} style={{ padding:'32px', textAlign:'center', color:MUTED, fontSize:'0.82rem' }}>Loading...</td></tr>
-            ) : filtered.length===0 ? (
-              <tr><td colSpan={4} style={{ padding:'32px', textAlign:'center', color:MUTED, fontSize:'0.82rem' }}>No episodes found.</td></tr>
-            ) : filtered.map((ep,i)=>(
-              <tr key={ep.productionid} style={{ borderBottom:i<filtered.length-1?`1px solid ${BORDER}`:'none' }}
-                onMouseEnter={e=>e.currentTarget.style.background='rgba(201,146,74,0.02)'}
-                onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
-                <td style={{ padding:'13px 16px', color:CREAM, fontSize:'0.85rem' }}>{ep.productiontitle}</td>
-                <td style={{ padding:'13px 16px' }}><StatusBadge status={ep.productionstatus} /></td>
-                <td style={{ padding:'13px 16px', color:MUTED, fontSize:'0.78rem' }}>{timeAgo(ep.updatedate)}</td>
-                <td style={{ padding:'13px 16px' }}>
-                  <div style={{ display:'flex', gap:'12px' }}>
-                    <button onClick={()=>setSelectedEpisode(ep)}
-                      style={{ background:'none', border:'none', color:GOLD, fontSize:'0.72rem', cursor:'pointer', padding:0 }}>Open Editor</button>
-                    {ep.productionstatus==='approved' && (
-                      <button style={{ background:'none', border:'none', color:GREEN, fontSize:'0.72rem', cursor:'pointer', padding:0 }}>Send to Distribution</button>
+          <div style={{ border:`1px solid ${BORDER}` }}>
+            <table style={{ width:'100%', borderCollapse:'collapse' }}>
+              <thead>
+                <tr style={{ borderBottom:`1px solid ${BORDER}`, background:SURFACE2 }}>
+                  {['Episode / Shot / Take','Status','Updated','Actions'].map(h=>(
+                    <th key={h} style={{ padding:'10px 16px', textAlign:'left', fontSize:'0.68rem', color:CHARCOAL, letterSpacing:'0.1em', textTransform:'uppercase', fontWeight:400 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <tr><td colSpan={4} style={{ padding:'32px', textAlign:'center', color:MUTED, fontSize:'0.82rem' }}>Loading...</td></tr>
+                ) : arcs.length===0 ? (
+                  <tr><td colSpan={4} style={{ padding:'32px', textAlign:'center', color:MUTED, fontSize:'0.82rem' }}>No episodes found.</td></tr>
+                ) : arcs.map(arc=>(
+                  <React.Fragment key={`arc-${arc.productionid}`}>
+                    {arc.productionid !== -1 && (
+                      <tr style={{ borderBottom:`1px solid ${BORDER}`, background:'rgba(201,146,74,0.04)', cursor:'pointer' }}
+                        onClick={()=>toggleArc(arc.productionid)}
+                        onMouseEnter={e=>e.currentTarget.style.background='rgba(201,146,74,0.07)'}
+                        onMouseLeave={e=>e.currentTarget.style.background='rgba(201,146,74,0.04)'}>
+                        <td colSpan={4} style={{ padding:'9px 16px', fontSize:'0.78rem', color:GOLD, fontWeight:600, letterSpacing:'0.06em' }}>
+                          <span style={{ marginRight:8, fontSize:'0.65rem' }}>{expandedArcs[arc.productionid]?'▼':'▶'}</span>
+                          {arc.productiontitle}
+                          <span style={{ marginLeft:10, fontSize:'0.7rem', color:CHARCOAL, fontWeight:400 }}>{arc.episodes.length} episodes</span>
+                        </td>
+                      </tr>
                     )}
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+                    {(arc.productionid===-1 || expandedArcs[arc.productionid]) &&
+                      arc.episodes.filter(ep=>filter==='all'||ep.productionstatus===filter).map(ep=>(
+                        <React.Fragment key={`ep-${ep.productionid}`}>
+                          <tr style={{ borderBottom:`1px solid ${BORDER}` }}
+                            onMouseEnter={e=>e.currentTarget.style.background='rgba(201,146,74,0.02)'}
+                            onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                            <td style={{ padding:'11px 16px 11px 32px', color:CREAM, fontSize:'0.83rem' }}>
+                              <span onClick={()=>toggleEp(ep.productionid)}
+                                style={{ cursor:'pointer', marginRight:8, fontSize:'0.65rem', color:CHARCOAL }}>
+                                {expandedEps[ep.productionid]?'▼':'▶'}
+                              </span>
+                              {ep.productiontitle}
+                            </td>
+                            <td style={{ padding:'11px 16px' }}><StatusBadge status={ep.productionstatus} /></td>
+                            <td style={{ padding:'11px 16px', color:MUTED, fontSize:'0.78rem' }}>{timeAgo(ep.updatedate)}</td>
+                            <td style={{ padding:'11px 16px' }}>
+                              <div style={{ display:'flex', gap:'12px' }}>
+                                <button onClick={()=>setSelectedEpisode(ep)}
+                                  style={{ background:'none', border:'none', color:GOLD, fontSize:'0.72rem', cursor:'pointer', padding:0 }}>Open Editor</button>
+                                {ep.productionstatus==='approved' && (
+                                  <button style={{ background:'none', border:'none', color:GREEN, fontSize:'0.72rem', cursor:'pointer', padding:0 }}>Send to Distribution</button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                          {expandedEps[ep.productionid] && shotsMap[ep.productionid]===null && (
+                            <tr><td colSpan={4} style={{ padding:'8px 16px 8px 52px', color:MUTED, fontSize:'0.72rem' }}>Loading shots…</td></tr>
+                          )}
+                          {expandedEps[ep.productionid] && shotsMap[ep.productionid]?.length===0 && (
+                            <tr><td colSpan={4} style={{ padding:'8px 16px 8px 52px', color:MUTED, fontSize:'0.72rem' }}>No shots found.</td></tr>
+                          )}
+                          {expandedEps[ep.productionid] && (shotsMap[ep.productionid]||[]).map(shot=>(
+                            <React.Fragment key={`shot-${shot.productionid}`}>
+                              <tr style={{ borderBottom:`1px solid ${BORDER}`, background:'rgba(255,255,255,0.01)' }}
+                                onMouseEnter={e=>e.currentTarget.style.background='rgba(201,146,74,0.015)'}
+                                onMouseLeave={e=>e.currentTarget.style.background='rgba(255,255,255,0.01)'}>
+                                <td style={{ padding:'9px 16px 9px 52px', color:CHARCOAL, fontSize:'0.78rem' }}>
+                                  <span style={{ marginRight:8, fontSize:'0.6rem' }}>↳</span>{shot.productiontitle}
+                                </td>
+                                <td style={{ padding:'9px 16px' }}><StatusBadge status={shot.productionstatus} /></td>
+                                <td colSpan={2} style={{ padding:'9px 16px', color:MUTED, fontSize:'0.72rem' }}>
+                                  {(takesMap[shot.productionid]||[]).length} take{(takesMap[shot.productionid]||[]).length!==1?'s':''}
+                                </td>
+                              </tr>
+                              {(takesMap[shot.productionid]||[]).map(take=>(
+                                <tr key={`take-${take.productionid}`} style={{ borderBottom:`1px solid ${BORDER}`, background:'rgba(255,255,255,0.005)' }}>
+                                  <td style={{ padding:'7px 16px 7px 68px', color:MUTED, fontSize:'0.73rem' }}>
+                                    <span style={{ marginRight:8, fontSize:'0.6rem' }}>↳</span>{take.productiontitle||`Take ${take.productionid}`}
+                                  </td>
+                                  <td style={{ padding:'7px 16px' }}><StatusBadge status={take.productionstatus} /></td>
+                                  <td colSpan={2} style={{ padding:'7px 16px' }}>
+                                    {take.videourl && (
+                                      <a href={take.videourl} target="_blank" rel="noreferrer"
+                                        style={{ color:GOLD, fontSize:'0.7rem', textDecoration:'none', fontWeight:600 }}>▶ View</a>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </React.Fragment>
+                          ))}
+                        </React.Fragment>
+                      ))
+                    }
+                  </React.Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
