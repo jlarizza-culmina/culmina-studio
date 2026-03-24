@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import EpisodeAssembler from '../components/postproduction/EpisodeAssembler'
 
 const GOLD = '#C9924A'
 const CHARCOAL = '#5C574E'
@@ -238,6 +239,7 @@ export default function Post() {
   const [selectedTitleId, setSelectedTitleId] = useState('')
   const [filter, setFilter]       = useState('all')
   const [selectedEpisode, setSelectedEpisode] = useState(null)
+  const [activeTab, setActiveTab] = useState('queue')
 
   useEffect(() => {
     supabase.from('productions').select('productionid,productiontitle').eq('productiongroup','TITLE').eq('activestatus','A')
@@ -286,7 +288,7 @@ export default function Post() {
     return `${Math.floor(h/24)}d ago`
   }
 
-  if (selectedEpisode) {
+  if (activeTab === 'queue' && selectedEpisode) {
     return <EpisodeEditor episode={selectedEpisode} onBack={()=>setSelectedEpisode(null)} onStatusChange={handleStatusChange} />
   }
 
