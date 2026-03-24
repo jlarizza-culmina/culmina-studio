@@ -20,7 +20,7 @@ export default async function handler(req, res) {
 
   if (!apiKey) return res.status(500).json({ error: 'ELEVENLABS_API_KEY not configured' })
 
-  const { text, voice_id, model_id = 'eleven_multilingual_v2', shot_id } = req.body || {}
+  const { text, voice_id, model_id = 'eleven_multilingual_v2', shot_id, stability = 0.5 } = req.body || {}
   if (!text)     return res.status(400).json({ error: 'text is required' })
   if (!voice_id) return res.status(400).json({ error: 'voice_id is required' })
 
@@ -36,7 +36,7 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         text,
         model_id,
-        voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+        voice_settings: { stability, similarity_boost: 0.75 },
       }),
     })
 

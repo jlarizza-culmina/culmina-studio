@@ -170,10 +170,38 @@ function ImageCreationPanel({ prompt, locked, isSound, onFinalSelected }) {
         }))
         if(!images.length) throw new Error('No images returned — prompt may have been filtered')
         setDrafts(images)
+      } else if (isSound) {
+        // ElevenLabs voice generation — N variations
+        const voiceId = data.elevenlabs_voice_id || data.voiceprompt
+        if (!voiceId) throw new Error('No ElevenLabs voice ID set. Add one in the Voice Design section.')
+        const text = data.script || data.voiceprompt || `${data.instancename || 'Character'} voice sample.`
+        const stabilitySteps = [0.5, 0.35, 0.65, 0.2, 0.8, 0.45]
+        const audioDrafts = []
+        for (let i = 0; i < variations; i++) {
+          const res = await fetch('/api/elevenlabs-proxy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              text,
+              voice_id: voiceId,
+              stability: stabilitySteps[i % stabilitySteps.length],
+              shot_id: `asset_${assetid || Date.now()}_v${i}`,
+            }),
+          })
+          const result = await res.json()
+          if (!res.ok) throw new Error(result.error || `ElevenLabs error on variation ${i+1}`)
+          audioDrafts.push({
+            id: Date.now() + i,
+            audioUrl: result.url || null,
+            label: `Variation ${i + 1}`,
+            stability: stabilitySteps[i % stabilitySteps.length],
+          })
+        }
+        setDrafts(audioDrafts)
       } else {
-        // Placeholder for other models (Midjourney, etc.) — stub until API keys added
+        // Placeholder for other image models (Midjourney, etc.)
         await new Promise(r=>setTimeout(r,1400))
-        setDrafts(Array.from({length:isSound?1:variations},(_,i)=>({
+        setDrafts(Array.from({length:variations},(_,i)=>({
           id:Date.now()+i, dataUrl:null, b64:null, seed:Math.random()
         })))
       }
@@ -213,6 +241,40 @@ function ImageCreationPanel({ prompt, locked, isSound, onFinalSelected }) {
         </button>
       )}
       {locked && <div style={{ fontSize:'0.72rem', color:CHARCOAL, fontStyle:'italic' }}>Asset is locked. Clone to create an editable copy.</div>}
+      {isSound && drafts.length>0 && (
+        <div style={{ marginTop:'12px' }}>
+          <div style={{ fontSize:'0.68rem', color:CHARCOAL, letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:'10px' }}>Select Final Voice</div>
+          <div style={{ display:'flex', flexDirection:'column', gap:'8px' }}>
+            {drafts.map((d,i)=>(
+              <div key={d.id} onClick={()=>selectFinal(i)}
+                style={{ display:'flex', alignItems:'center', gap:'12px', padding:'10px 14px',
+                  border:`2px solid ${finalIdx===i?GOLD:BORDER}`, borderRadius:3,
+                  cursor:'pointer', background:finalIdx===i?'rgba(201,146,74,0.06)':'rgba(255,255,255,0.01)',
+                  transition:'border-color 0.15s' }}>
+                <span style={{ fontSize:12, color:finalIdx===i?GOLD:CHARCOAL, fontWeight:700 }}>
+                  {finalIdx===i?'✓':'○'}
+                </span>
+                <span style={{ fontSize:'0.78rem', color:CREAM, flex:1 }}>{d.label}</span>
+                <span style={{ fontSize:'0.68rem', color:MUTED }}>stability {d.stability}</span>
+                {d.audioUrl && (
+                  <audio controls src={d.audioUrl}
+                    style={{ height:28, maxWidth:180 }}
+                    onClick={e=>e.stopPropagation()} />
+                )}
+                {!d.audioUrl && <span style={{ fontSize:'0.68rem', color:MUTED }}>No URL — R2 not configured</span>}
+              </div>
+            ))}
+          </div>
+          {finalIdx!==null && (
+            <button onClick={()=>onFinalSelected&&onFinalSelected(drafts[finalIdx].audioUrl, true)}
+              style={{ marginTop:'10px', background:GOLD, border:'none', color:'#1A1810',
+                padding:'7px 18px', cursor:'pointer', fontFamily:'DM Sans, sans-serif',
+                fontSize:'0.72rem', letterSpacing:'0.1em', textTransform:'uppercase', fontWeight:500 }}>
+              Save as Final Voice
+            </button>
+          )}
+        </div>
+      )}
       {error && <div style={{ marginTop:'8px', padding:'8px 12px', background:'rgba(200,75,49,0.1)', border:'1px solid rgba(200,75,49,0.25)', color:RED, fontSize:'0.75rem', lineHeight:1.4 }}>⚠ {error}</div>}
       {!isSound && drafts.length>0 && (
         <div>
@@ -933,6 +995,20 @@ const [viewMode,     setViewMode]     = useState('grid')
     setLoading(false)
   }
 
+  useEffect(() => {
+    supabase.from('productions').select('productionid,productiontitle')
+      .eq('productiongroup','TITLE').eq('activestatus','A').order('productiontitle')
+      .then(({ data }) => setTitles(data || []))
+  }, [])
+
+  async function handleProdFilter(titleId) {
+    setProdFilter(titleId)
+    if (titleId === 'all') { setProdAssetIds(null); return }
+    const { data } = await supabase.from('assets2production')
+      .select('assetid').eq('productionid', parseInt(titleId))
+    setProdAssetIds(data ? data.map(r => r.assetid) : [])
+  }
+
   function openNew()    { setOpenAssetId(null); setShowForm(true) }
   function openEdit(id) { setOpenAssetId(id);   setShowForm(true) }
   function closeForm()  { setShowForm(false);   setOpenAssetId(null) }
@@ -941,14 +1017,22 @@ const [viewMode,     setViewMode]     = useState('grid')
 
   const filtered = assets.filter(a=>
     (typeFilter==='All'   || a.assettype===typeFilter) &&
-    (domainFilter==='All' || a.domain===domainFilter)
+    (domainFilter==='All' || a.domain===domainFilter)  &&
+    (prodAssetIds===null  || prodAssetIds.includes(a.assetid))
   )
 
   return (
     <div style={{ fontFamily:'DM Sans, sans-serif', color:CREAM }}>
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'24px', flexWrap:'wrap', gap:'12px' }}>
         <h1 style={{ fontFamily:'Cormorant Garamond, serif', fontSize:'2rem', fontWeight:300, color:CREAM, margin:0 }}>Asset Library</h1>
-        <button onClick={openNew} style={{ background:GOLD, border:'none', color:'#1A1810', padding:'9px 20px', cursor:'pointer', fontFamily:'DM Sans, sans-serif', fontSize:'0.75rem', letterSpacing:'0.1em', textTransform:'uppercase', fontWeight:500 }}>+ New Asset</button>
+        <div style={{ display:'flex', gap:'10px', alignItems:'center' }}>
+          <select value={prodFilter} onChange={e=>handleProdFilter(e.target.value)}
+            style={{ background:SURFACE, border:`1px solid ${BORDER}`, color:CREAM, padding:'7px 14px', fontFamily:'DM Sans, sans-serif', fontSize:'0.8rem', outline:'none', cursor:'pointer' }}>
+            <option value="all">All Productions</option>
+            {titles.map(t=><option key={t.productionid} value={t.productionid}>{t.productiontitle}</option>)}
+          </select>
+          <button onClick={openNew} style={{ background:GOLD, border:'none', color:'#1A1810', padding:'9px 20px', cursor:'pointer', fontFamily:'DM Sans, sans-serif', fontSize:'0.75rem', letterSpacing:'0.1em', textTransform:'uppercase', fontWeight:500 }}>+ New Asset</button>
+        </div>
       </div>
       {/* Filters */}
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'20px', flexWrap:'wrap', gap:'10px' }}>
