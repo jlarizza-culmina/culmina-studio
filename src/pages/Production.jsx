@@ -398,6 +398,12 @@ function TakeCard({ take, shotId, onApprove, onReject, onDelete, timeAgo }) {
           {isRejected && (
             <button onClick={() => onApprove(take, shotId)} style={{ background:'none', border:`1px solid ${BORDER}`, color:CHARCOAL, padding:'3px 8px', fontSize:'0.65rem', cursor:'pointer', fontFamily:'DM Sans, sans-serif' }}>Un-reject</button>
           )}
+          {isApproved && (
+            <button onClick={() => onReject(take, shotId)} style={{ background:'none', border:`1px solid rgba(74,156,122,0.4)`, color:GREEN, padding:'3px 8px', fontSize:'0.65rem', cursor:'pointer', fontFamily:'DM Sans, sans-serif' }}>Un-approve</button>
+          )}
+          {isApproved && (
+            <button onClick={() => onReject(take, shotId)} style={{ background:'none', border:`1px solid rgba(74,156,122,0.4)`, color:GREEN, padding:'3px 8px', fontSize:'0.65rem', cursor:'pointer', fontFamily:'DM Sans, sans-serif' }}>Un-approve</button>
+          )}
           <button onClick={() => onDelete(take, shotId)} style={{ background:'none', border:'1px solid rgba(200,75,49,0.3)', color:RED, padding:'3px 8px', fontSize:'0.65rem', cursor:'pointer', fontFamily:'DM Sans, sans-serif', letterSpacing:'0.06em', textTransform:'uppercase' }}>Delete</button>
         </div>
       </div>
