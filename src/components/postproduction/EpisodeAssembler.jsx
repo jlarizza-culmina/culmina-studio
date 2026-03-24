@@ -514,7 +514,7 @@ export default function EpisodeAssembler() {
                       </td>
                       <td style={{ padding: '10px 14px', textAlign: 'center', width: 70 }}>
                         {take?.videourl
-                          ? <a href={take.videourl} target="_blank" rel="noreferrer"
+                          ? <a href={`/api/veo-proxy?uri=${encodeURIComponent(take.videourl)}`} target="_blank" rel="noreferrer"
                               style={{ color: GOLD, fontSize: 11, fontWeight: 600, textDecoration: 'none' }}>▶ View</a>
                           : <span style={{ color: MUTED, fontSize: 11 }}>—</span>
                         }
