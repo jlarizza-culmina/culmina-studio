@@ -999,16 +999,16 @@ const [viewMode,     setViewMode]     = useState('grid')
   }
 
   useEffect(() => {
-    supabase.from('productions').select('productionid,productiontitle')
+    supabase.from('productions').select('productionid,productiontitle,productionstatus')
       .eq('productiongroup','TITLE').eq('activestatus','A').order('productiontitle')
-      .then(({ data }) => setTitles(data || []))
+      .then(({ data }) => setTitles((data || []).filter(t => t.productionstatus && t.productionstatus !== '')))
   }, [])
 
   async function handleProdFilter(titleId) {
     setProdFilter(titleId)
     if (titleId === 'all') { setProdAssetIds(null); return }
-    const { data } = await supabase.from('assets2production')
-      .select('assetid').eq('productionid', parseInt(titleId))
+    const { data } = await supabase.from('production_assets')
+      .select('assetid').eq('productionid', parseInt(titleId)).eq('activestatus','A')
     setProdAssetIds(data ? data.map(r => r.assetid) : [])
   }
 
