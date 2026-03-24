@@ -126,7 +126,7 @@ function UploadZone({ label, locked, accept }) {
   )
 }
 
-function ImageCreationPanel({ prompt, locked, isSound, onFinalSelected }) {
+function ImageCreationPanel({ prompt, locked, isSound, onFinalSelected, assetid, data }) {
   const modelList = isSound ? AUDIO_AI_MODELS : IMAGE_AI_MODELS
   const [model,      setModel]      = useState(modelList[0])
   const [variations, setVariations] = useState(isSound?1:3)
@@ -172,9 +172,10 @@ function ImageCreationPanel({ prompt, locked, isSound, onFinalSelected }) {
         setDrafts(images)
       } else if (isSound) {
         // ElevenLabs voice generation — N variations
-        const voiceId = data.elevenlabs_voice_id || data.voiceprompt
-        if (!voiceId) throw new Error('No ElevenLabs voice ID set. Add one in the Voice Design section.')
-        const text = data.script || data.voiceprompt || `${data.instancename || 'Character'} voice sample.`
+        const voiceData = data || {}
+        const voiceId = voiceData.elevenlabs_voice_id || voiceData.voiceprompt || prompt
+        if (!voiceId) throw new Error('No ElevenLabs Voice ID or Voice Prompt set. Fill in the Voice & Sound section first.')
+        const text = voiceData.script || prompt || `${voiceData.instancename || 'Character'} voice sample.`
         const stabilitySteps = [0.5, 0.35, 0.65, 0.2, 0.8, 0.45]
         const audioDrafts = []
         for (let i = 0; i < variations; i++) {
@@ -675,6 +676,23 @@ function InstanceForm({ data, onChange, assetMeta, locked, onSaveReminder }) {
             <div style={lbl}>Script / Voice Notes</div>
             <textarea {...f('script')} style={{...mkTxt(locked),minHeight:'60px'}} placeholder="Dialog, voice notes, personality cues, scene context..." />
           </div>
+          {/* Voice generation for non-Sound character assets */}
+          {!isSound && (
+            <div style={{ marginTop:'4px' }}>
+              <div style={{ fontSize:'0.68rem', color:GOLD, letterSpacing:'0.15em', textTransform:'uppercase', marginBottom:'10px' }}>Voice Creation</div>
+              <ImageCreationPanel
+                prompt={data.voiceprompt}
+                locked={locked}
+                isSound={true}
+                assetid={assetMeta?.assetid}
+                data={data}
+                onFinalSelected={(url, remind) => {
+                  onChange('elevenlabs_voice_id', url)
+                  remind && onSaveReminder && onSaveReminder()
+                }}
+              />
+            </div>
+          )}
         </Section>
       )}
 
