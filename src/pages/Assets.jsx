@@ -621,7 +621,7 @@ function InstanceForm({ data, onChange, assetMeta, locked, onSaveReminder }) {
       {/* ── Voice & Sound ── */}
 
       {!isSet && !isProp && (
-                <Section title="Voice & Sound">
+                <Section title="Voice & Sound" defaultOpen={true}>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px', marginBottom:'10px' }}>
             <div>
               <div style={lbl}>Age</div>
@@ -687,7 +687,7 @@ function InstanceForm({ data, onChange, assetMeta, locked, onSaveReminder }) {
                 assetid={assetMeta?.assetid}
                 data={data}
                 onFinalSelected={(url, remind) => {
-                  onChange('elevenlabs_voice_id', url)
+                  setAssetMeta(m => ({...m, elevenlabs_voice_id: url}))
                   remind && onSaveReminder && onSaveReminder()
                 }}
               />
@@ -817,7 +817,7 @@ function AssetForm({ assetId, onClose, onSaved, onCloned }) {
       setLoading(true)
       const { data:a }     = await supabase.from('assets').select('*').eq('assetid',assetId).single()
       const { data:insts } = await supabase.from('assetinstances').select('*').eq('assetid',assetId).eq('activestatus','A').order('instanceid')
-      if(a) setAssetMeta({ name:a.name, assettype:a.assettype, domain:a.domain||'User Domain', aigenerated:!!a.aigenerated, royaltyeligible:!!a.royaltyeligible, locked:!!a.locked })
+      if(a) setAssetMeta({ name:a.name, assettype:a.assettype, domain:a.domain||'User Domain', aigenerated:!!a.aigenerated, royaltyeligible:!!a.royaltyeligible, locked:!!a.locked, elevenlabs_voice_id:a.elevenlabs_voice_id||'' })
       if(insts&&insts.length>0) { setInstances(insts); setActiveKey(insts[0].instanceid) }
       setLoading(false)
     }
@@ -847,6 +847,7 @@ function AssetForm({ assetId, onClose, onSaved, onCloned }) {
         await supabase.from('assets').update({
           name:assetMeta.name, assetname:assetMeta.name, assettype:assetMeta.assettype, domain:assetMeta.domain,
           aigenerated:assetMeta.aigenerated, royaltyeligible:assetMeta.royaltyeligible,
+          elevenlabs_voice_id:assetMeta.elevenlabs_voice_id||null,
           updatedate:new Date().toISOString(), updatedby:endUser?.enduserid
         }).eq('assetid',aid)
       }
