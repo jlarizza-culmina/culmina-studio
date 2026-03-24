@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import EpisodeAssembler from '../components/postproduction/EpisodeAssembler'
+import VoiceTrackPanel from '../components/postproduction/VoiceTrackPanel'
 
 const GOLD = '#C9924A'
 const CHARCOAL = '#5C574E'
@@ -177,22 +178,7 @@ function EpisodeEditor({ episode, onBack, onStatusChange }) {
             ))}
           </div>
 
-          {activePanel==='voice' && (
-            <div>
-              {shots.length===0 && <div style={{ color:MUTED, fontSize:'0.8rem' }}>No shots found for this episode.</div>}
-              {shots.map(shot=>(
-                <div key={shot.productionid} style={{ marginBottom:'12px', padding:'14px', background:SURFACE2, border:`1px solid ${BORDER}` }}>
-                  <div style={{ fontSize:'0.78rem', color:CREAM, marginBottom:'10px' }}>{shot.productiontitle}</div>
-                  <label style={lbl}>AI Voice</label>
-                  <select value={shot.voice} onChange={e=>setShots(ss=>ss.map(s=>s.productionid===shot.productionid?{...s,voice:e.target.value}:s))}
-                    style={{...inp, marginBottom:'8px', cursor:'pointer'}}>
-                    {VOICE_OPTIONS.map(v=><option key={v}>{v}</option>)}
-                  </select>
-                  <button style={{ background:'none', border:`1px solid ${BORDER}`, color:GOLD, padding:'5px 12px', cursor:'pointer', fontFamily:'DM Sans, sans-serif', fontSize:'0.68rem' }}>Preview</button>
-                </div>
-              ))}
-            </div>
-          )}
+          {activePanel==='voice' && <VoiceTrackPanel episode={episode} />}
 
           {activePanel==='captions' && (
             <div>
