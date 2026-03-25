@@ -88,7 +88,7 @@ export default async function handler(req, res) {
       const json = await r.json()
       const preview = json.previews?.[0] || {}
       const generatedVoiceId = preview.generated_voice_id
-      const audioBase64 = preview.audio_base64 || null
+      const audioBase64 = preview.audio_base_64 || preview.audio_base64 || null
 
       // Optionally upload to R2 if configured
       let audioUrl = null
