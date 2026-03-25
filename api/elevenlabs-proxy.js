@@ -71,7 +71,7 @@ export default async function handler(req, res) {
 
       const body = {
         voice_description,
-        text: (text && text.length >= 100) ? text : (text || '').padEnd(0) || 'My name is unknown. I am a character in a micro-drama series produced by Culmina Studios. Every story has a beginning, and mine starts here.',
+        text: (text && text.length >= 100) ? text : 'My name is unknown. I am a character in a micro-drama series produced by Culmina Studios. Every story has a beginning, and this is where mine starts.',
         loudness,
         quality: typeof quality === 'number' ? quality : 1.0,
       }
