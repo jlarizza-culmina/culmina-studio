@@ -78,23 +78,30 @@ export default async function handler(req, res) {
       if (gender) body.gender = gender
       if (age)    body.age    = age
 
-      const r = await fetch('https://api.elevenlabs.io/v1/voice-generation/generate-voice', {
+      const r = await fetch('https://api.elevenlabs.io/v1/text-to-voice/design', {
         method: 'POST',
         headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       })
       if (!r.ok) return res.status(r.status).json({ error: `Voice Design error: ${await r.text()}` })
 
-      const generatedVoiceId = r.headers.get('generated_voice_id')
-      const buffer = Buffer.from(await r.arrayBuffer())
-      const filename = `voice_design/preview_${generatedVoiceId || Date.now()}.mp3`
-      const audioUrl = await uploadToR2(buffer, filename)
+      const json = await r.json()
+      const preview = json.previews?.[0] || {}
+      const generatedVoiceId = preview.generated_voice_id
+      const audioBase64 = preview.audio_base64 || null
+
+      // Optionally upload to R2 if configured
+      let audioUrl = null
+      if (audioBase64 && r2Url && r2Token) {
+        const buffer = Buffer.from(audioBase64, 'base64')
+        audioUrl = await uploadToR2(buffer, `voice_design/preview_${generatedVoiceId || Date.now()}.mp3`)
+      }
 
       return res.status(200).json({
         generated_voice_id: generatedVoiceId,
         audio_url:    audioUrl,
-        audio_base64: audioUrl ? null : buffer.toString('base64'),
-        content_type: 'audio/mpeg',
+        audio_base64: audioUrl ? null : audioBase64,
+        content_type: preview.media_type || 'audio/mpeg',
       })
     }
 
@@ -103,7 +110,7 @@ export default async function handler(req, res) {
       if (!generated_voice_id) return res.status(400).json({ error: 'generated_voice_id is required' })
       if (!name)               return res.status(400).json({ error: 'name is required' })
 
-      const r = await fetch('https://api.elevenlabs.io/v1/voice-generation/create-voice', {
+      const r = await fetch('https://api.elevenlabs.io/v1/text-to-voice', {
         method: 'POST',
         headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json' },
         body: JSON.stringify({ voice_name: name, generated_voice_id, voice_description: description || '' }),

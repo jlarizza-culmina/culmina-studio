@@ -136,6 +136,78 @@ function apiProxy() {
           res.end(Buffer.from(buffer))
         } catch (err) { res.writeHead(500); res.end(JSON.stringify({ error: err.message })) }
       })
+
+      // /api/elevenlabs-proxy — Voice Design + TTS (keeps API key server-side)
+      server.middlewares.use('/api/elevenlabs-proxy', async (req, res) => {
+        if (req.method === 'OPTIONS') { res.writeHead(200); res.end(); return }
+        if (req.method !== 'POST') { res.writeHead(405); res.end(JSON.stringify({ error: 'POST only' })); return }
+        const env    = loadEnv('development', process.cwd(), '')
+        const apiKey = env.ELEVENLABS_API_KEY
+        if (!apiKey) { res.writeHead(500); res.end(JSON.stringify({ error: 'ELEVENLABS_API_KEY not set in .env.local' })); return }
+        let body = ''
+        req.on('data', chunk => { body += chunk })
+        req.on('end', async () => {
+          try {
+            const parsed = JSON.parse(body)
+            const { action = 'tts' } = parsed
+            const r2Url   = env.R2_PUBLIC_URL
+            const r2Token = env.R2_API_TOKEN
+            async function uploadToR2(buffer, filename) {
+              if (!r2Url || !r2Token) return null
+              const up = await fetch(`${r2Url}/${filename}`, {
+                method: 'PUT', headers: { 'Authorization': `Bearer ${r2Token}`, 'Content-Type': 'audio/mpeg' }, body: buffer,
+              })
+              return up.ok ? `${r2Url}/${filename}` : null
+            }
+            if (action === 'design') {
+              const { voice_description, text, gender, age, loudness = 0, quality = 'high' } = parsed
+              if (!voice_description) { res.writeHead(400); res.end(JSON.stringify({ error: 'voice_description required' })); return }
+              const payload = { voice_description, text: text || 'Hello. I am a character in a Culmina Studios micro-drama.', loudness, quality }
+              if (gender) payload.gender = gender
+              if (age)    payload.age    = age
+              const r = await fetch('https://api.elevenlabs.io/v1/text-to-voice/design', {
+                method: 'POST', headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+              })
+              if (!r.ok) { const e = await r.text(); res.writeHead(r.status); res.end(JSON.stringify({ error: `Voice Design error: ${e}` })); return }
+              const json    = await r.json()
+              const preview = json.previews?.[0] || {}
+              const gvid    = preview.generated_voice_id
+              const b64     = preview.audio_base64 || null
+              let audioUrl  = null
+              if (b64 && r2Url && r2Token) audioUrl = await uploadToR2(Buffer.from(b64, 'base64'), `voice_design/preview_${gvid || Date.now()}.mp3`)
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ generated_voice_id: gvid, audio_url: audioUrl, audio_base64: audioUrl ? null : b64, content_type: preview.media_type || 'audio/mpeg' }))
+              return
+            }
+            if (action === 'save_voice') {
+              const { generated_voice_id, name, description = '' } = parsed
+              if (!generated_voice_id) { res.writeHead(400); res.end(JSON.stringify({ error: 'generated_voice_id required' })); return }
+              if (!name)               { res.writeHead(400); res.end(JSON.stringify({ error: 'name required' })); return }
+              const r = await fetch('https://api.elevenlabs.io/v1/text-to-voice', {
+                method: 'POST', headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ voice_name: name, generated_voice_id, voice_description: description }),
+              })
+              if (!r.ok) { const e = await r.text(); res.writeHead(r.status); res.end(JSON.stringify({ error: `Save Voice error: ${e}` })); return }
+              const data = await r.json()
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ voice_id: data.voice_id }))
+              return
+            }
+            const { text, voice_id, model_id = 'eleven_multilingual_v2', shot_id, stability = 0.5 } = parsed
+            if (!text)     { res.writeHead(400); res.end(JSON.stringify({ error: 'text required' })); return }
+            if (!voice_id) { res.writeHead(400); res.end(JSON.stringify({ error: 'voice_id required' })); return }
+            const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice_id}`, {
+              method: 'POST', headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json', 'Accept': 'audio/mpeg' },
+              body: JSON.stringify({ text, model_id, voice_settings: { stability, similarity_boost: 0.75 } }),
+            })
+            if (!r.ok) { const e = await r.text(); res.writeHead(r.status); res.end(JSON.stringify({ error: `TTS error: ${e}` })); return }
+            const buf = Buffer.from(await r.arrayBuffer())
+            const url = await uploadToR2(buf, `voiceover/shot_${shot_id || Date.now()}.mp3`)
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify(url ? { url } : { audio_base64: buf.toString('base64'), content_type: 'audio/mpeg' }))
+          } catch (err) { res.writeHead(500); res.end(JSON.stringify({ error: err.message })) }
+        })
+      })
     },
   }
 }
