@@ -416,8 +416,29 @@ function VoiceDesignPanel({ locked, assetName, voicePrompt, gender, age, script,
       <div style={{ fontSize:'0.68rem', color:GOLD, letterSpacing:'0.15em', textTransform:'uppercase', marginBottom:'12px' }}>Voice Design</div>
 
       {savedId && (
-        <div style={{ marginBottom:'10px', padding:'7px 10px', background:'rgba(74,156,122,0.1)', border:`1px solid rgba(74,156,122,0.2)`, fontSize:'11px', color:GREEN }}>
-          ✓ Voice saved — ID: <span style={{ fontFamily:'monospace', fontSize:'10px' }}>{savedId}</span>
+        <div style={{ marginBottom:'10px', padding:'7px 10px', background:'rgba(74,156,122,0.1)', border:`1px solid rgba(74,156,122,0.2)`, fontSize:'11px', color:GREEN, display:'flex', alignItems:'center', justifyContent:'space-between', gap:'10px' }}>
+          <span>✓ Voice saved — ID: <span style={{ fontFamily:'monospace', fontSize:'10px' }}>{savedId}</span></span>
+          <button onClick={async () => {
+            try {
+              const r = await fetch('/api/elevenlabs-proxy', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  action: 'tts',
+                  voice_id: savedId,
+                  text: script || `Hi, my name is ${assetName || 'the character'}. This is a preview of my voice.`,
+                  stability: 0.5,
+                }),
+              })
+              const data = await r.json()
+              if (!r.ok) { alert(data.error); return }
+              const src = data.url || (data.audio_base64 ? `data:audio/mpeg;base64,${data.audio_base64}` : null)
+              if (src) new Audio(src).play()
+            } catch(e) { alert(e.message) }
+          }}
+            style={{ background:'rgba(74,156,122,0.2)', border:'1px solid rgba(74,156,122,0.4)', color:GREEN, padding:'3px 10px', cursor:'pointer', fontFamily:'DM Sans, sans-serif', fontSize:'0.68rem', letterSpacing:'0.08em', textTransform:'uppercase', flexShrink:0 }}>
+            ▶ Preview
+          </button>
         </div>
       )}
 
