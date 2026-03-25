@@ -126,13 +126,24 @@ function UploadZone({ label, locked, accept }) {
   )
 }
 
+const EL_VOICES = [
+  { label:'Aria (Female)',   id:'9BWtsMINqrJLrRacOk9x' },
+  { label:'Josh (Male)',     id:'TxGEqnHWrfWFTfGW9XjX' },
+  { label:'Rachel (Female)', id:'21m00Tcm4TlvDq8ikWAM' },
+  { label:'Adam (Male)',     id:'pNInz6obpgDQGcFmaJgB' },
+  { label:'Bella (Female)',  id:'EXAVITQu4vr4xnSDxMaL' },
+  { label:'Antoni (Male)',   id:'ErXwobaYiN019PkySvjV' },
+  { label:'Elli (Female)',   id:'MF3mGyEYCl7XYWbV9V6O' },
+  { label:'Sam (Male)',      id:'yoZ06aMxZJJ28mfd3POQ' },
+]
 function ImageCreationPanel({ prompt, locked, isSound, onFinalSelected, assetid, data }) {
   const modelList = isSound ? AUDIO_AI_MODELS : IMAGE_AI_MODELS
-  const [model,      setModel]      = useState(modelList[0])
-  const [variations, setVariations] = useState(isSound?1:3)
-  const [generating, setGenerating] = useState(false)
-  const [drafts,     setDrafts]     = useState([])   // { id, dataUrl, b64 }
-  const [finalIdx,   setFinalIdx]   = useState(null)
+  const [model,           setModel]           = useState(modelList[0])
+  const [variations,      setVariations]      = useState(isSound?1:3)
+  const [generating,      setGenerating]      = useState(false)
+  const [drafts,          setDrafts]          = useState([])
+  const [finalIdx,        setFinalIdx]        = useState(null)
+  const [selectedVoiceId, setSelectedVoiceId] = useState(EL_VOICES[0].id)
   const [error,      setError]      = useState('')
   const sel = { width:'100%', background:SURFACE2, border:`1px solid ${BORDER}`, color:CREAM, padding:'8px 10px', fontFamily:'DM Sans, sans-serif', fontSize:'0.8rem', outline:'none', cursor:'pointer', boxSizing:'border-box' }
 
@@ -173,9 +184,9 @@ function ImageCreationPanel({ prompt, locked, isSound, onFinalSelected, assetid,
       } else if (isSound) {
         // ElevenLabs voice generation — N variations
         const voiceData = data || {}
-        const voiceId = voiceData.elevenlabs_voice_id || voiceData.voiceprompt || prompt
-        if (!voiceId) throw new Error('No ElevenLabs Voice ID or Voice Prompt set. Fill in the Voice & Sound section first.')
-        const text = voiceData.script || prompt || `${voiceData.instancename || 'Character'} voice sample.`
+        const voiceId = selectedVoiceId
+        if (!voiceId) throw new Error('Select an ElevenLabs voice to generate from.')
+        const text = voiceData.script || voiceData.voiceprompt || prompt || `${voiceData.instancename || 'Character'} voice sample.`
         const stabilitySteps = [0.5, 0.35, 0.65, 0.2, 0.8, 0.45]
         const audioDrafts = []
         for (let i = 0; i < variations; i++) {
@@ -236,10 +247,22 @@ function ImageCreationPanel({ prompt, locked, isSound, onFinalSelected, assetid,
         </div>
       )}
       {isSound && (
-        <button onClick={handleCreate} disabled={generating||locked}
-          style={{ background:locked?'rgba(255,255,255,0.04)':generating?'rgba(201,146,74,0.5)':GOLD, border:'none', color:locked?MUTED:'#1A1810', padding:'8px 18px', cursor:locked||generating?'default':'pointer', fontFamily:'DM Sans, sans-serif', fontSize:'0.72rem', letterSpacing:'0.1em', textTransform:'uppercase', fontWeight:500, marginBottom:'16px' }}>
-          {generating?'Generating...':locked?'🔒 Locked':'Generate Audio'}
-        </button>
+        <div style={{ marginBottom:'16px' }}>
+          <div style={{ display:'flex', alignItems:'flex-end', gap:'10px', flexWrap:'wrap' }}>
+            <div style={{ flex:1, minWidth:160 }}>
+              <div style={{ fontSize:'0.68rem', color:MUTED, letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:'5px' }}>ElevenLabs Voice</div>
+              <select value={selectedVoiceId} onChange={e=>setSelectedVoiceId(e.target.value)} disabled={locked}
+                style={{ background:SURFACE, border:`1px solid ${BORDER}`, color:CREAM, padding:'7px 10px', fontFamily:'DM Sans, sans-serif', fontSize:'0.78rem', width:'100%', outline:'none' }}>
+                {EL_VOICES.map(v=><option key={v.id} value={v.id}>{v.label}</option>)}
+              </select>
+            </div>
+            <Spinner label="# Variations" value={variations} onChange={setVariations} min={1} max={5} disabled={locked} />
+            <button onClick={handleCreate} disabled={generating||locked}
+              style={{ background:locked?'rgba(255,255,255,0.04)':generating?'rgba(201,146,74,0.5)':GOLD, border:'none', color:locked?MUTED:'#1A1810', padding:'8px 18px', cursor:locked||generating?'default':'pointer', fontFamily:'DM Sans, sans-serif', fontSize:'0.72rem', letterSpacing:'0.1em', textTransform:'uppercase', fontWeight:500 }}>
+              {generating?'Generating...':locked?'Locked':'Generate Voice'}
+            </button>
+          </div>
+        </div>
       )}
       {locked && <div style={{ fontSize:'0.72rem', color:CHARCOAL, fontStyle:'italic' }}>Asset is locked. Clone to create an editable copy.</div>}
       {isSound && drafts.length>0 && (
