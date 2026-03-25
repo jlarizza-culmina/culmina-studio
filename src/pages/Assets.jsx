@@ -126,16 +126,6 @@ function UploadZone({ label, locked, accept }) {
   )
 }
 
-const EL_VOICES = [
-  { label:'Aria (Female)',   id:'9BWtsMINqrJLrRacOk9x' },
-  { label:'Josh (Male)',     id:'TxGEqnHWrfWFTfGW9XjX' },
-  { label:'Rachel (Female)', id:'21m00Tcm4TlvDq8ikWAM' },
-  { label:'Adam (Male)',     id:'pNInz6obpgDQGcFmaJgB' },
-  { label:'Bella (Female)',  id:'EXAVITQu4vr4xnSDxMaL' },
-  { label:'Antoni (Male)',   id:'ErXwobaYiN019PkySvjV' },
-  { label:'Elli (Female)',   id:'MF3mGyEYCl7XYWbV9V6O' },
-  { label:'Sam (Male)',      id:'yoZ06aMxZJJ28mfd3POQ' },
-]
 function ImageCreationPanel({ prompt, locked, isSound, onFinalSelected, assetid, data }) {
   const modelList = isSound ? AUDIO_AI_MODELS : IMAGE_AI_MODELS
   const [model,           setModel]           = useState(modelList[0])
@@ -143,7 +133,6 @@ function ImageCreationPanel({ prompt, locked, isSound, onFinalSelected, assetid,
   const [generating,      setGenerating]      = useState(false)
   const [drafts,          setDrafts]          = useState([])
   const [finalIdx,        setFinalIdx]        = useState(null)
-  const [selectedVoiceId, setSelectedVoiceId] = useState(EL_VOICES[0].id)
   const [error,      setError]      = useState('')
   const sel = { width:'100%', background:SURFACE2, border:`1px solid ${BORDER}`, color:CREAM, padding:'8px 10px', fontFamily:'DM Sans, sans-serif', fontSize:'0.8rem', outline:'none', cursor:'pointer', boxSizing:'border-box' }
 
@@ -249,17 +238,10 @@ function ImageCreationPanel({ prompt, locked, isSound, onFinalSelected, assetid,
       {isSound && (
         <div style={{ marginBottom:'16px' }}>
           <div style={{ display:'flex', alignItems:'flex-end', gap:'10px', flexWrap:'wrap' }}>
-            <div style={{ flex:1, minWidth:160 }}>
-              <div style={{ fontSize:'0.68rem', color:MUTED, letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:'5px' }}>ElevenLabs Voice</div>
-              <select value={selectedVoiceId} onChange={e=>setSelectedVoiceId(e.target.value)} disabled={locked}
-                style={{ background:SURFACE, border:`1px solid ${BORDER}`, color:CREAM, padding:'7px 10px', fontFamily:'DM Sans, sans-serif', fontSize:'0.78rem', width:'100%', outline:'none' }}>
-                {EL_VOICES.map(v=><option key={v.id} value={v.id}>{v.label}</option>)}
-              </select>
-            </div>
             <Spinner label="# Variations" value={variations} onChange={setVariations} min={1} max={5} disabled={locked} />
             <button onClick={handleCreate} disabled={generating||locked}
               style={{ background:locked?'rgba(255,255,255,0.04)':generating?'rgba(201,146,74,0.5)':GOLD, border:'none', color:locked?MUTED:'#1A1810', padding:'8px 18px', cursor:locked||generating?'default':'pointer', fontFamily:'DM Sans, sans-serif', fontSize:'0.72rem', letterSpacing:'0.1em', textTransform:'uppercase', fontWeight:500 }}>
-              {generating?'Generating...':locked?'Locked':'Generate Voice'}
+              {generating?'Generating...':locked?'Locked':'Generate Audio'}
             </button>
           </div>
         </div>
@@ -350,6 +332,151 @@ function SoundModelSelect({ f, sel }) {
       <option value="">— ElevenLabs (default) —</option>
       {opts.map(o => <option key={o.nvvalue} value={o.nvvalue}>{o.nvname}</option>)}
     </select>
+  )
+}
+
+
+function VoiceDesignPanel({ locked, assetName, voicePrompt, gender, age, script, existingVoiceId, onVoiceSaved }) {
+  const [previews,    setPreviews]    = useState([])   // [{generated_voice_id, audio_url, audio_base64, label}]
+  const [selectedIdx, setSelectedIdx] = useState(null)
+  const [generating,  setGenerating]  = useState(false)
+  const [saving,      setSaving]      = useState(false)
+  const [numPreviews, setNumPreviews] = useState(2)
+  const [error,       setError]       = useState('')
+  const [savedId,     setSavedId]     = useState(existingVoiceId || '')
+  const audioRefs = {}
+
+  function getAudioSrc(p) {
+    if (p.audio_url) return p.audio_url
+    if (p.audio_base64) return `data:audio/mpeg;base64,${p.audio_base64}`
+    return null
+  }
+
+  async function generatePreviews() {
+    if (!voicePrompt?.trim()) {
+      setError('Generate a Voice Prompt first using the button above.')
+      return
+    }
+    setGenerating(true); setError(''); setPreviews([]); setSelectedIdx(null)
+    const results = []
+    for (let i = 0; i < numPreviews; i++) {
+      try {
+        const r = await fetch('/api/elevenlabs-proxy', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'design',
+            voice_description: voicePrompt,
+            text: script || `Hi, my name is ${assetName || 'the character'}. Welcome to our story.`,
+            gender: gender?.toLowerCase() || undefined,
+            age: age || undefined,
+            loudness: i * 0.15,
+            quality: 'high',
+          }),
+        })
+        const data = await r.json()
+        if (!r.ok) throw new Error(data.error)
+        results.push({ ...data, label: `Preview ${i + 1}` })
+      } catch(e) {
+        setError(e.message); break
+      }
+    }
+    setPreviews(results)
+    setGenerating(false)
+  }
+
+  async function saveVoice() {
+    if (selectedIdx === null) { setError('Select a preview first'); return }
+    const preview = previews[selectedIdx]
+    if (!preview?.generated_voice_id) { setError('No voice ID returned — cannot save'); return }
+    setSaving(true); setError('')
+    try {
+      const r = await fetch('/api/elevenlabs-proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'save_voice',
+          generated_voice_id: preview.generated_voice_id,
+          name: assetName || `Culmina Voice ${Date.now()}`,
+          description: voicePrompt || '',
+        }),
+      })
+      const data = await r.json()
+      if (!r.ok) throw new Error(data.error)
+      setSavedId(data.voice_id)
+      onVoiceSaved && onVoiceSaved(data.voice_id)
+    } catch(e) { setError(e.message) }
+    setSaving(false)
+  }
+
+  const inp = { background:SURFACE, border:`1px solid ${BORDER}`, color:CREAM, padding:'6px 10px', fontFamily:'DM Sans, sans-serif', fontSize:'0.78rem', width:'100%', outline:'none', boxSizing:'border-box' }
+
+  return (
+    <div style={{ marginTop:'8px', background:'rgba(201,146,74,0.03)', border:`1px solid rgba(201,146,74,0.1)`, padding:'14px' }}>
+      <div style={{ fontSize:'0.68rem', color:GOLD, letterSpacing:'0.15em', textTransform:'uppercase', marginBottom:'12px' }}>Voice Design</div>
+
+      {savedId && (
+        <div style={{ marginBottom:'10px', padding:'7px 10px', background:'rgba(74,156,122,0.1)', border:`1px solid rgba(74,156,122,0.2)`, fontSize:'11px', color:GREEN }}>
+          ✓ Voice saved — ID: <span style={{ fontFamily:'monospace', fontSize:'10px' }}>{savedId}</span>
+        </div>
+      )}
+
+      {!voicePrompt?.trim() && (
+        <div style={{ marginBottom:'10px', padding:'7px 10px', background:'rgba(201,146,74,0.08)', border:`1px solid rgba(201,146,74,0.2)`, fontSize:'11px', color:GOLD }}>
+          ⚠ Generate a Voice Prompt above before creating voice previews.
+        </div>
+      )}
+
+      <div style={{ display:'flex', alignItems:'flex-end', gap:'10px', marginBottom:'12px' }}>
+        <Spinner label="# Previews" value={numPreviews} onChange={setNumPreviews} min={1} max={3} disabled={locked} />
+        <button onClick={generatePreviews} disabled={generating || locked || !voicePrompt?.trim()}
+          style={{ background:generating?'rgba(201,146,74,0.4)':GOLD, border:'none', color:'#1A1810', padding:'8px 18px', cursor:generating||locked||!voicePrompt?.trim()?'default':'pointer', fontFamily:'DM Sans, sans-serif', fontSize:'0.72rem', letterSpacing:'0.1em', textTransform:'uppercase', fontWeight:500, opacity:!voicePrompt?.trim()?0.4:1 }}>
+          {generating ? 'Generating…' : 'Generate Voice Previews'}
+        </button>
+      </div>
+
+      {previews.length > 0 && (
+        <div style={{ marginBottom:'12px' }}>
+          <div style={{ fontSize:'0.68rem', color:CHARCOAL, letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:'8px' }}>Select Final Voice</div>
+          <div style={{ display:'flex', flexDirection:'column', gap:'8px' }}>
+            {previews.map((p, i) => {
+              const src = getAudioSrc(p)
+              return (
+                <div key={i} onClick={() => setSelectedIdx(i)}
+                  style={{ display:'flex', alignItems:'center', gap:'10px', padding:'10px 12px',
+                    border:`2px solid ${selectedIdx===i ? GOLD : BORDER}`, cursor:'pointer',
+                    background: selectedIdx===i ? 'rgba(201,146,74,0.06)' : 'rgba(255,255,255,0.01)',
+                    transition:'border-color 0.15s' }}>
+                  <span style={{ fontSize:12, color:selectedIdx===i?GOLD:CHARCOAL, fontWeight:700, flexShrink:0 }}>
+                    {selectedIdx===i ? '✓' : '○'}
+                  </span>
+                  <span style={{ fontSize:'0.78rem', color:CREAM, flex:1 }}>{p.label}</span>
+                  {src && (
+                    <audio controls src={src} style={{ height:28, maxWidth:200 }}
+                      onClick={e => e.stopPropagation()} />
+                  )}
+                </div>
+              )
+            })}
+          </div>
+
+          {selectedIdx !== null && (
+            <button onClick={saveVoice} disabled={saving}
+              style={{ marginTop:'10px', background:saving?'rgba(74,156,122,0.4)':GREEN, border:'none', color:'#fff',
+                padding:'8px 20px', cursor:saving?'wait':'pointer', fontFamily:'DM Sans, sans-serif',
+                fontSize:'0.72rem', letterSpacing:'0.1em', textTransform:'uppercase', fontWeight:500 }}>
+              {saving ? 'Saving…' : 'Save Voice to Character'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {error && (
+        <div style={{ padding:'7px 10px', background:'rgba(200,75,49,0.1)', border:`1px solid rgba(200,75,49,0.25)`, color:'#C84B31', fontSize:'0.75rem' }}>
+          ⚠ {error}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -699,22 +826,21 @@ function InstanceForm({ data, onChange, assetMeta, locked, onSaveReminder, onVoi
             <div style={lbl}>Script / Voice Notes</div>
             <textarea {...f('script')} style={{...mkTxt(locked),minHeight:'60px'}} placeholder="Dialog, voice notes, personality cues, scene context..." />
           </div>
-          {/* Voice generation for non-Sound character assets */}
+          {/* Voice Design Panel — Character/Person/Animal assets */}
           {!isSound && (
-            <div style={{ marginTop:'4px' }}>
-              <div style={{ fontSize:'0.68rem', color:GOLD, letterSpacing:'0.15em', textTransform:'uppercase', marginBottom:'10px' }}>Voice Creation</div>
-              <ImageCreationPanel
-                prompt={data.voiceprompt}
-                locked={locked}
-                isSound={true}
-                assetid={assetMeta?.assetid}
-                data={data}
-                onFinalSelected={(url, remind) => {
-                  onVoiceIdSaved && onVoiceIdSaved(url)
-                  remind && onSaveReminder && onSaveReminder()
-                }}
-              />
-            </div>
+            <VoiceDesignPanel
+              locked={locked}
+              assetName={assetMeta?.name || ''}
+              voicePrompt={data.voiceprompt}
+              gender={data.voicegender}
+              age={data.voiceage}
+              script={data.script}
+              existingVoiceId={assetMeta?.elevenlabs_voice_id}
+              onVoiceSaved={(voiceId) => {
+                onVoiceIdSaved && onVoiceIdSaved(voiceId)
+                onSaveReminder && onSaveReminder()
+              }}
+            />
           )}
         </Section>
       )}
