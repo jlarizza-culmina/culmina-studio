@@ -330,7 +330,7 @@ function SoundModelSelect({ f, sel }) {
   )
 }
 
-function InstanceForm({ data, onChange, assetMeta, locked, onSaveReminder }) {
+function InstanceForm({ data, onChange, assetMeta, locked, onSaveReminder, onVoiceIdSaved }) {
   const { assettype } = assetMeta
   const inp = mkInp(locked); const sel = mkSel(locked); const txt = mkTxt(locked)
   const isChar   = assettype==='Person'
@@ -687,7 +687,7 @@ function InstanceForm({ data, onChange, assetMeta, locked, onSaveReminder }) {
                 assetid={assetMeta?.assetid}
                 data={data}
                 onFinalSelected={(url, remind) => {
-                  setAssetMeta(m => ({...m, elevenlabs_voice_id: url}))
+                  onVoiceIdSaved && onVoiceIdSaved(url)
                   remind && onSaveReminder && onSaveReminder()
                 }}
               />
@@ -977,7 +977,7 @@ function AssetForm({ assetId, onClose, onSaved, onCloned }) {
       {/* Body */}
       <div style={{ flex:1, overflowY:'auto' }}>
         {activeInst&&(
-          <InstanceForm key={activeInst.instanceid||activeInst._tempId} data={activeInst} onChange={updateActiveInst} assetMeta={assetMetaPlus} locked={locked} onSaveReminder={()=>showToast('Image selected — hit Save to keep it ✓')} />
+          <InstanceForm key={activeInst.instanceid||activeInst._tempId} data={activeInst} onChange={updateActiveInst} assetMeta={assetMetaPlus} locked={locked} onSaveReminder={()=>showToast('Image selected — hit Save to keep it ✓')} onVoiceIdSaved={(url)=>setAssetMeta(m=>({...m,elevenlabs_voice_id:url}))} />
         )}
       </div>
     </div>
