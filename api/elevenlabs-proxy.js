@@ -121,6 +121,15 @@ export default async function handler(req, res) {
       return res.status(200).json({ voice_id: data.voice_id })
     }
 
+    // ── LIST VOICES ───────────────────────────────────────────────────────────
+    if (action === 'list_voices') {
+      const r = await fetch('https://api.elevenlabs.io/v1/voices?show_legacy=false', {
+        headers: { 'xi-api-key': apiKey }
+      })
+      const data = await r.json()
+      return res.status(r.status).json({ voices: data.voices || [] })
+    }
+
     return res.status(400).json({ error: `Unknown action: ${action}` })
 
   } catch (err) {

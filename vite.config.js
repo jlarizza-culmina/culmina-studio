@@ -159,6 +159,15 @@ function apiProxy() {
               })
               return up.ok ? `${r2Url}/${filename}` : null
             }
+            if (action === 'list_voices') {
+              const r = await fetch('https://api.elevenlabs.io/v1/voices?show_legacy=false', {
+                headers: { 'xi-api-key': apiKey }
+              })
+              const data = await r.json()
+              res.writeHead(r.status, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ voices: data.voices || [] }))
+              return
+            }
             if (action === 'design') {
               const { voice_description, text, gender, age, loudness = 0, quality = 1.0 } = parsed
               if (!voice_description) { res.writeHead(400); res.end(JSON.stringify({ error: 'voice_description required' })); return }

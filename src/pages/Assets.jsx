@@ -1,4 +1,4 @@
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
@@ -1168,6 +1168,7 @@ const [viewMode,     setViewMode]     = useState('grid')
   const [showForm,     setShowForm]     = useState(false)
   // Auto-open asset from URL param (navigated from Development module)
   const [searchParams, setSearchParams] = useSearchParams()
+  const navigate = useNavigate()
   useEffect(() => {
     const assetid = searchParams.get('assetid')
     if (assetid) {
@@ -1201,8 +1202,8 @@ const [viewMode,     setViewMode]     = useState('grid')
     setProdAssetIds(data ? data.map(r => r.assetid) : [])
   }
 
-  function openNew()    { setOpenAssetId(null); setShowForm(true) }
-  function openEdit(id) { setOpenAssetId(id);   setShowForm(true) }
+  function openNew()    { navigate('/assets/new') }
+  function openEdit(id) { navigate(`/assets/${id}`) }
   function closeForm()  { setShowForm(false);   setOpenAssetId(null) }
   function handleSaved()    { loadAssets() }
   function handleCloned(id) { loadAssets(); setOpenAssetId(id) }

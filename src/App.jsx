@@ -6,6 +6,7 @@ import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Manuscript from './pages/Manuscript'
 import Assets from './pages/Assets'
+import AssetDetail from './pages/AssetDetail'
 import Development from './pages/Development'
 import Production from './pages/Production'
 import Post from './pages/Post'
@@ -36,6 +37,8 @@ export default function App() {
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="manuscript" element={<Manuscript />} />
         <Route path="assets" element={<Assets />} />
+        <Route path="assets/new" element={<AssetDetail />} />
+        <Route path="assets/:assetId" element={<AssetDetail />} />
         <Route path="development" element={<Development />} />
         <Route path="production" element={<Production />} />
         <Route path="post" element={<Post />} />
