@@ -160,9 +160,9 @@ function apiProxy() {
               return up.ok ? `${r2Url}/${filename}` : null
             }
             if (action === 'design') {
-              const { voice_description, text, gender, age, loudness = 0, quality = 'high' } = parsed
+              const { voice_description, text, gender, age, loudness = 0, quality = 1.0 } = parsed
               if (!voice_description) { res.writeHead(400); res.end(JSON.stringify({ error: 'voice_description required' })); return }
-              const payload = { voice_description, text: text || 'Hello. I am a character in a Culmina Studios micro-drama.', loudness, quality }
+              const payload = { voice_description, text: (text && text.length >= 100) ? text : (text || '') || 'My name is unknown. I am a character in a micro-drama series produced by Culmina Studios. Every story has a beginning, and mine starts here.', loudness, quality: typeof quality === 'number' ? quality : 1.0 }
               if (gender) payload.gender = gender
               if (age)    payload.age    = age
               const r = await fetch('https://api.elevenlabs.io/v1/text-to-voice/design', {

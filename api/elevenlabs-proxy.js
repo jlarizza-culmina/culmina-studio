@@ -25,7 +25,7 @@ export default async function handler(req, res) {
   const {
     action = 'tts',
     text, voice_id, model_id = 'eleven_multilingual_v2', shot_id, stability = 0.5,
-    voice_description, loudness = 0, quality = 'high', gender, age,
+    voice_description, loudness = 0, quality = 1.0, gender, age,
     generated_voice_id, name, description,
   } = req.body || {}
 
@@ -71,9 +71,9 @@ export default async function handler(req, res) {
 
       const body = {
         voice_description,
-        text: text || 'Hello. I am a character in a micro-drama series produced by Culmina Studios.',
+        text: (text && text.length >= 100) ? text : (text || '').padEnd(0) || 'My name is unknown. I am a character in a micro-drama series produced by Culmina Studios. Every story has a beginning, and mine starts here.',
         loudness,
-        quality,
+        quality: typeof quality === 'number' ? quality : 1.0,
       }
       if (gender) body.gender = gender
       if (age)    body.age    = age
