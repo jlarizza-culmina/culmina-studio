@@ -152,8 +152,28 @@ export default async function handler(req, res) {
       return res.status(200).json({ voice_id: srcId, note: 'Using original voice_id' })
     }
 
-    // ── LIST VOICES ───────────────────────────────────────────────────────────
+    // ── LIST SHARED VOICES (public library with server-side filtering) ─────────
     if (action === 'list_voices') {
+      const { gender, age, accent, language, category, use_case, search, page = 0, page_size = 100, featured } = req.body || {}
+      const params = new URLSearchParams({ page_size })
+      if (gender)   params.set('gender',   gender)
+      if (age)      params.set('age',      age)
+      if (accent)   params.set('accent',   accent)
+      if (language) params.set('language', language)
+      if (category) params.set('category', category)
+      if (use_case) params.set('use_case', use_case)
+      if (search)   params.set('search',   search)
+      if (featured) params.set('featured', 'true')
+      if (page)     params.set('page',     page)
+      const r = await fetch(`https://api.elevenlabs.io/v1/shared-voices?${params}`, {
+        headers: { 'xi-api-key': apiKey }
+      })
+      const data = await r.json()
+      return res.status(r.status).json({ voices: data.voices || [], has_more: data.has_more || false })
+    }
+
+    // ── MY VOICES (account library only) ─────────────────────────────────────
+    if (action === 'my_voices') {
       const r = await fetch('https://api.elevenlabs.io/v1/voices?show_legacy=false', {
         headers: { 'xi-api-key': apiKey }
       })

@@ -51,23 +51,47 @@ function Slider({label,value,onChange,min=0,max=1,step=0.05,note,disabled=false}
   return(<div style={{marginBottom:'18px',opacity:disabled?0.5:1}}><div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'5px'}}><span style={lbl}>{label}</span><span style={{fontSize:'0.8rem',color:GOLD,fontFamily:'monospace',marginBottom:'6px'}}>{typeof value==='number'?value.toFixed(2):value}</span></div><input type="range" min={min} max={max} step={step} value={value} onChange={e=>!disabled&&onChange(parseFloat(e.target.value))} disabled={disabled} style={{width:'100%',accentColor:GOLD,cursor:disabled?'default':'pointer'}}/>{note&&<div style={{fontSize:'0.62rem',color:MUTED,marginTop:'4px',lineHeight:1.5}}>{note}</div>}</div>)
 }
 
-// ── Voice Library ─────────────────────────────────────────────────────────────
+// ── Voice Library ─────────────────────────────────────────────
 function VoiceLibrary({onUse,onClone,onClose}){
   const [voices,setVoices]=useState([])
-  const [search,setSearch]=useState('')
-  const [filterGender,setFilterGender]=useState('')
-  const [filterCategory,setFilterCategory]=useState('')
-  const [filterAccent,setFilterAccent]=useState('')
-  const [loading,setLoading]=useState(true)
+  const [search,setSearch]=useState("")
+  const [filterGender,setFilterGender]=useState("")
+  const [filterAge,setFilterAge]=useState("")
+  const [filterAccent,setFilterAccent]=useState("")
+  const [filterCategory,setFilterCategory]=useState("")
+  const [filterLang,setFilterLang]=useState("")
+  const [featured,setFeatured]=useState(false)
+  const [page,setPage]=useState(0)
+  const [hasMore,setHasMore]=useState(false)
+  const [loading,setLoading]=useState(false)
   const [cloning,setCloning]=useState(null)
-  const [error,setError]=useState('')
+  const [error,setError]=useState("")
   const [playing,setPlaying]=useState(null)
   const audioRef=useRef(null)
 
-  useEffect(()=>{
-    fetch('/api/elevenlabs-proxy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'list_voices'})})
-      .then(r=>r.json()).then(d=>{setVoices(d.voices||[]);setLoading(false)}).catch(e=>{setError(e.message);setLoading(false)})
-  },[])
+  async function doSearch(reset=false){
+    setLoading(true);setError("")
+    const pg=reset?0:page
+    try{
+      const body={action:"list_voices",page_size:50,page:pg}
+      if(filterGender)body.gender=filterGender
+      if(filterAge)body.age=filterAge
+      if(filterAccent)body.accent=filterAccent
+      if(filterCategory)body.category=filterCategory
+      if(filterLang)body.language=filterLang
+      if(search)body.search=search
+      if(featured)body.featured=true
+      const r=await fetch("/api/elevenlabs-proxy",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})
+      const d=await r.json()
+      if(!r.ok)throw new Error(d.error||"Error fetching voices")
+      setVoices(v=>reset?d.voices:[...v,...(d.voices||[])])
+      setHasMore(d.has_more||false)
+      if(reset)setPage(0)
+    }catch(e){setError(e.message)}
+    setLoading(false)
+  }
+
+  useEffect(()=>{doSearch(true)},[filterGender,filterAge,filterAccent,filterCategory,filterLang,featured])
 
   function playPreview(v){
     if(audioRef.current){audioRef.current.pause();audioRef.current=null}
@@ -77,86 +101,75 @@ function VoiceLibrary({onUse,onClone,onClose}){
   }
 
   async function doClone(v){
-    setCloning(v.voice_id);setError('')
+    setCloning(v.voice_id);setError("")
     try{
-      const r=await fetch('/api/elevenlabs-proxy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'clone_voice',voice_id:v.voice_id,name:`${v.name} (Clone)`})})
+      const r=await fetch("/api/elevenlabs-proxy",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"clone_voice",voice_id:v.voice_id,name:v.name+" (Clone)"})})
       const d=await r.json()
       if(!r.ok)throw new Error(d.error)
-      onClone(d.voice_id,v.name,v.labels?.description||v.name)
+      onClone(d.voice_id,v.name,v.description||v.name)
     }catch(e){setError(e.message)}
     setCloning(null)
   }
 
-  // Build filter options from loaded voices
-  const genders=[...new Set(voices.map(v=>v.labels?.gender).filter(Boolean))].sort()
-  const categories=[...new Set(voices.map(v=>v.category||v.labels?.use_case).filter(Boolean))].sort()
-  const accents=[...new Set(voices.map(v=>v.labels?.accent).filter(Boolean))].sort()
-
-  const filtered=voices.filter(v=>{
-    if(filterGender && (v.labels?.gender||'').toLowerCase()!==filterGender.toLowerCase()) return false
-    if(filterCategory && (v.category||v.labels?.use_case||'').toLowerCase()!==filterCategory.toLowerCase()) return false
-    if(filterAccent && (v.labels?.accent||'').toLowerCase()!==filterAccent.toLowerCase()) return false
-    if(search){const s=search.toLowerCase();return v.name?.toLowerCase().includes(s)||(v.labels?.description||'').toLowerCase().includes(s)||(v.description||'').toLowerCase().includes(s)}
-    return true
-  })
-
-  const selStyle={background:SURFACE2,border:`1px solid ${BORDER}`,color:CREAM,padding:'6px 8px',fontFamily:'DM Sans, sans-serif',fontSize:'0.72rem',outline:'none',cursor:'pointer'}
+  const ss={background:SURFACE2,border:"1px solid "+BORDER,color:CREAM,padding:"6px 8px",fontFamily:"DM Sans, sans-serif",fontSize:"0.72rem",outline:"none",cursor:"pointer"}
 
   return(
-    <div style={{position:'fixed',top:0,right:0,bottom:0,width:'440px',background:SURFACE,borderLeft:`1px solid ${BORDER}`,zIndex:200,display:'flex',flexDirection:'column',boxShadow:'-8px 0 32px rgba(0,0,0,0.6)'}}>
-      <div style={{padding:'14px 20px',borderBottom:`1px solid ${BORDER}`,display:'flex',alignItems:'center',gap:'10px',flexShrink:0}}>
-        <div style={{fontSize:'0.68rem',color:GOLD,letterSpacing:'0.14em',textTransform:'uppercase',flex:1}}>ElevenLabs Voice Library</div>
-        <button onClick={onClose} style={{background:'none',border:'none',color:MUTED,cursor:'pointer',fontSize:'1.1rem'}}>✕</button>
+    <div style={{position:"fixed",top:0,right:0,bottom:0,width:"460px",background:SURFACE,borderLeft:"1px solid "+BORDER,zIndex:200,display:"flex",flexDirection:"column",boxShadow:"-8px 0 32px rgba(0,0,0,0.6)"}}>
+      <div style={{padding:"14px 20px",borderBottom:"1px solid "+BORDER,display:"flex",alignItems:"center",gap:"10px",flexShrink:0}}>
+        <div style={{fontSize:"0.68rem",color:GOLD,letterSpacing:"0.14em",textTransform:"uppercase",flex:1}}>ElevenLabs Voice Library</div>
+        <button onClick={onClose} style={{background:"none",border:"none",color:MUTED,cursor:"pointer",fontSize:"1.1rem"}}>x</button>
       </div>
-
-      {/* Filters */}
-      <div style={{padding:'10px 20px',borderBottom:`1px solid ${BORDER}`,flexShrink:0,display:'flex',flexDirection:'column',gap:'8px'}}>
-        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search by name or description..."
-          style={{width:'100%',background:SURFACE2,border:`1px solid ${BORDER}`,color:CREAM,padding:'8px 12px',fontFamily:'DM Sans, sans-serif',fontSize:'0.82rem',outline:'none',boxSizing:'border-box'}}/>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'6px'}}>
-          <select value={filterGender} onChange={e=>setFilterGender(e.target.value)} style={selStyle}>
-            <option value="">All genders</option>
-            {genders.map(g=><option key={g} value={g}>{g}</option>)}
-          </select>
-          <select value={filterCategory} onChange={e=>setFilterCategory(e.target.value)} style={selStyle}>
-            <option value="">All categories</option>
-            {categories.map(c=><option key={c} value={c}>{c}</option>)}
-          </select>
-          <select value={filterAccent} onChange={e=>setFilterAccent(e.target.value)} style={selStyle}>
-            <option value="">All accents</option>
-            {accents.map(a=><option key={a} value={a}>{a}</option>)}
-          </select>
+      <div style={{padding:"10px 20px",borderBottom:"1px solid "+BORDER,flexShrink:0,display:"flex",flexDirection:"column",gap:"8px"}}>
+        <div style={{display:"flex",gap:"8px"}}>
+          <input value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>e.key==="Enter"&&doSearch(true)} placeholder="Search name or description"
+            style={{flex:1,background:SURFACE2,border:"1px solid "+BORDER,color:CREAM,padding:"7px 12px",fontFamily:"DM Sans, sans-serif",fontSize:"0.8rem",outline:"none",boxSizing:"border-box"}}/>
+          <button onClick={()=>doSearch(true)} style={{background:"rgba(201,146,74,0.1)",border:"1px solid rgba(201,146,74,0.25)",color:GOLD,padding:"6px 14px",cursor:"pointer",fontFamily:"DM Sans, sans-serif",fontSize:"0.68rem",letterSpacing:"0.08em",textTransform:"uppercase"}}>Search</button>
         </div>
-        <div style={{fontSize:'0.62rem',color:MUTED}}>{filtered.length} of {voices.length} voices</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px"}}>
+          <select value={filterGender} onChange={e=>setFilterGender(e.target.value)} style={ss}><option value="">All genders</option>{["male","female"].map(g=><option key={g} value={g}>{g.charAt(0).toUpperCase()+g.slice(1)}</option>)}</select>
+          <select value={filterAge} onChange={e=>setFilterAge(e.target.value)} style={ss}><option value="">All ages</option>{["young","middle_aged","old"].map(a=><option key={a} value={a}>{a.replace("_"," ")}</option>)}</select>
+          <select value={filterAccent} onChange={e=>setFilterAccent(e.target.value)} style={ss}><option value="">All accents</option>{["american","british","australian","canadian","irish","scottish","indian","african","middle_eastern","french","german","italian","spanish","swedish","norwegian","danish","dutch","polish","portuguese","russian","japanese","korean","chinese"].map(a=><option key={a} value={a}>{a.replace("_"," ")}</option>)}</select>
+          <select value={filterCategory} onChange={e=>setFilterCategory(e.target.value)} style={ss}><option value="">All categories</option>{["professional","high_quality","celebrity","generated"].map(c=><option key={c} value={c}>{c.replace("_"," ")}</option>)}</select>
+          <select value={filterLang} onChange={e=>setFilterLang(e.target.value)} style={ss}><option value="">All languages</option>{["en","es","fr","de","it","pt","ja","ko","zh","ar","nl","pl","sv","da","no","fi","ru","tr","id","hi"].map(l=><option key={l} value={l}>{l}</option>)}</select>
+          <label style={{display:"flex",alignItems:"center",gap:"6px",cursor:"pointer",fontSize:"0.72rem",color:featured?GOLD:MUTED,padding:"6px 8px",border:"1px solid "+(featured?"rgba(201,146,74,0.25)":BORDER)}}><input type="checkbox" checked={featured} onChange={e=>setFeatured(e.target.checked)} style={{accentColor:GOLD}}/>Featured only</label>
+        </div>
+        <div style={{fontSize:"0.62rem",color:MUTED}}>{voices.length} voices{hasMore?" - more available":""}</div>
       </div>
-
-      {error&&<div style={{padding:'8px 20px',background:'rgba(200,75,49,0.1)',color:RED,fontSize:'0.72rem',flexShrink:0}}>⚠ {error}</div>}
-
-      <div style={{flex:1,overflowY:'auto'}}>
-        {loading&&<div style={{padding:'24px',color:MUTED,fontSize:'0.78rem',textAlign:'center'}}>Loading voices…</div>}
-        {!loading&&filtered.length===0&&<div style={{padding:'24px',color:MUTED,fontSize:'0.78rem',textAlign:'center'}}>No voices match filters</div>}
-        {filtered.map(v=>(
-          <div key={v.voice_id} style={{padding:'10px 20px',borderBottom:`1px solid rgba(201,146,74,0.06)`,display:'flex',alignItems:'center',gap:'8px'}}
-            onMouseEnter={e=>e.currentTarget.style.background='rgba(201,146,74,0.03)'}
-            onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+      {error&&<div style={{padding:"8px 20px",background:"rgba(200,75,49,0.1)",color:RED,fontSize:"0.72rem",flexShrink:0}}>&#9888; {error}</div>}
+      <div style={{flex:1,overflowY:"auto"}}>
+        {loading&&voices.length===0&&<div style={{padding:"24px",color:MUTED,fontSize:"0.78rem",textAlign:"center"}}>Loading voices...</div>}
+        {!loading&&voices.length===0&&<div style={{padding:"24px",color:MUTED,fontSize:"0.78rem",textAlign:"center"}}>No voices found - try different filters</div>}
+        {voices.map(v=>(
+          <div key={v.voice_id} style={{padding:"10px 20px",borderBottom:"1px solid rgba(201,146,74,0.06)",display:"flex",alignItems:"center",gap:"8px"}}
+            onMouseEnter={e=>e.currentTarget.style.background="rgba(201,146,74,0.03)"}
+            onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
             <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:'0.83rem',color:CREAM,marginBottom:'2px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{v.name}</div>
-              <div style={{fontSize:'0.62rem',color:MUTED,display:'flex',gap:'6px',flexWrap:'wrap'}}>
-                {v.category&&<span style={{background:'rgba(122,158,200,0.12)',color:BLUE,padding:'1px 5px'}}>{v.category}</span>}
-                {v.labels?.gender&&<span>{v.labels.gender}</span>}
-                {v.labels?.accent&&<span>· {v.labels.accent}</span>}
-                {v.labels?.age&&<span>· {v.labels.age}</span>}
+              <div style={{fontSize:"0.83rem",color:CREAM,marginBottom:"2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{v.name}</div>
+              <div style={{fontSize:"0.62rem",color:MUTED,display:"flex",gap:"6px",flexWrap:"wrap"}}>
+                {v.category&&<span style={{background:"rgba(122,158,200,0.12)",color:BLUE,padding:"1px 5px",borderRadius:"2px"}}>{v.category}</span>}
+                {v.gender&&<span>{v.gender}</span>}
+                {v.accent&&<span>- {v.accent}</span>}
+                {v.age&&<span>- {v.age}</span>}
+                {v.use_case&&<span>- {v.use_case.replace(/_/g," ")}</span>}
               </div>
+              {v.description&&<div style={{fontSize:"0.6rem",color:MUTED,marginTop:"2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",opacity:0.7}}>{v.description}</div>}
             </div>
-            {v.preview_url&&<button onClick={()=>playPreview(v)} style={{width:'26px',height:'26px',background:playing===v.voice_id?GOLD:'rgba(255,255,255,0.06)',border:`1px solid ${playing===v.voice_id?GOLD:BORDER}`,color:playing===v.voice_id?SURFACE:CREAM,cursor:'pointer',fontSize:'0.58rem',flexShrink:0}}>{playing===v.voice_id?'■':'▶'}</button>}
-            <button onClick={()=>onUse(v.voice_id,v.name)} style={{background:'rgba(201,146,74,0.1)',border:`1px solid rgba(201,146,74,0.25)`,color:GOLD,padding:'4px 9px',cursor:'pointer',fontFamily:'DM Sans, sans-serif',fontSize:'0.62rem',letterSpacing:'0.08em',textTransform:'uppercase',flexShrink:0}}>Use</button>
-            <button onClick={()=>doClone(v)} disabled={cloning===v.voice_id} style={{background:'rgba(122,158,200,0.08)',border:`1px solid rgba(122,158,200,0.2)`,color:BLUE,padding:'4px 9px',cursor:cloning===v.voice_id?'wait':'pointer',fontFamily:'DM Sans, sans-serif',fontSize:'0.62rem',letterSpacing:'0.08em',textTransform:'uppercase',flexShrink:0}}>{cloning===v.voice_id?'…':'Clone'}</button>
+            {v.preview_url&&<button onClick={()=>playPreview(v)} style={{width:"26px",height:"26px",background:playing===v.voice_id?GOLD:"rgba(255,255,255,0.06)",border:"1px solid "+(playing===v.voice_id?GOLD:BORDER),color:playing===v.voice_id?SURFACE:CREAM,cursor:"pointer",fontSize:"0.58rem",flexShrink:0}}>{playing===v.voice_id?"stop":"play"}</button>}
+            <button onClick={()=>onUse(v.voice_id,v.name)} style={{background:"rgba(201,146,74,0.1)",border:"1px solid rgba(201,146,74,0.25)",color:GOLD,padding:"4px 9px",cursor:"pointer",fontFamily:"DM Sans, sans-serif",fontSize:"0.62rem",letterSpacing:"0.08em",textTransform:"uppercase",flexShrink:0}}>Use</button>
+            <button onClick={()=>doClone(v)} disabled={cloning===v.voice_id} style={{background:"rgba(122,158,200,0.08)",border:"1px solid rgba(122,158,200,0.2)",color:BLUE,padding:"4px 9px",cursor:cloning===v.voice_id?"wait":"pointer",fontFamily:"DM Sans, sans-serif",fontSize:"0.62rem",letterSpacing:"0.08em",textTransform:"uppercase",flexShrink:0}}>{cloning===v.voice_id?"...":"Clone"}</button>
           </div>
         ))}
+        {hasMore&&<div style={{padding:"16px 20px",textAlign:"center"}}>
+          <button onClick={()=>{const np=page+1;setPage(np);setTimeout(()=>doSearch(false),0)}} disabled={loading}
+            style={{background:"rgba(201,146,74,0.08)",border:"1px solid rgba(201,146,74,0.2)",color:GOLD,padding:"7px 20px",cursor:"pointer",fontFamily:"DM Sans, sans-serif",fontSize:"0.68rem",letterSpacing:"0.08em",textTransform:"uppercase"}}>
+            {loading?"Loading...":"Load More"}
+          </button>
+        </div>}
       </div>
     </div>
   )
 }
+
 
 // ── Voice Tab ─────────────────────────────────────────────────────────────────
 function VoiceTab({data,onChange,locked,assetMeta,onVoiceIdChange,savedAssetId}){
