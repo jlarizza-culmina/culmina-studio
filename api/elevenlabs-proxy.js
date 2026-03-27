@@ -115,10 +115,41 @@ export default async function handler(req, res) {
         headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json' },
         body: JSON.stringify({ voice_name: name, generated_voice_id, voice_description: description || '' }),
       })
-      if (!r.ok) return res.status(r.status).json({ error: `Save Voice error: ${await r.text()}` })
-
-      const data = await r.json()
+      const saveText = await r.text()
+      if (!r.ok) {
+        try {
+          const errJson = JSON.parse(saveText)
+          const msg = errJson?.detail?.message || ''
+          const match = msg.match(/Voice with id (\S+) has already been created/)
+          if (match) {
+            const listR = await fetch('https://api.elevenlabs.io/v1/voices', { headers: { 'xi-api-key': apiKey } })
+            const listData = await listR.json()
+            const found = (listData.voices || []).find(v => v.name === name)
+            if (found) return res.status(200).json({ voice_id: found.voice_id })
+          }
+        } catch(e) {}
+        return res.status(r.status).json({ error: `Save Voice error: ${saveText}` })
+      }
+      const data = JSON.parse(saveText)
       return res.status(200).json({ voice_id: data.voice_id })
+    }
+
+    // ── CLONE VOICE ──────────────────────────────────────────────────────────
+    if (action === 'clone_voice') {
+      const { voice_id: srcId, name: cloneName } = req.body || {}
+      if (!srcId) return res.status(400).json({ error: 'voice_id required' })
+      const infoR = await fetch(`https://api.elevenlabs.io/v1/voices/${srcId}`, { headers: { 'xi-api-key': apiKey } })
+      const info  = await infoR.json()
+      const addR  = await fetch('https://api.elevenlabs.io/v1/voices/add', {
+        method: 'POST',
+        headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ public_owner_id: info.sharing?.original_voice_id, voice_id: srcId })
+      })
+      if (addR.ok) {
+        const addData = await addR.json()
+        return res.status(200).json({ voice_id: addData.voice_id || srcId })
+      }
+      return res.status(200).json({ voice_id: srcId, note: 'Using original voice_id' })
     }
 
     // ── LIST VOICES ───────────────────────────────────────────────────────────
