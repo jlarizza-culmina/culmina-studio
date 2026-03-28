@@ -968,192 +968,6 @@ Return ONLY the prompt, one concise sentence.`}]})})
   )
 }
 
-function AssetForm({ assetId, onClose, onSaved, onCloned }) {
-  const { endUser } = useAuth()
-  const [savedAssetId, setSavedAssetId] = useState(assetId)
-  const isNew = !savedAssetId
-  const [assetMeta, setAssetMeta] = useState({ name:'', assettype:'Person', domain:'User Domain', aigenerated:false, royaltyeligible:false, locked:false })
-  const [instances, setInstances] = useState([{ _tempId:1, ...BLANK_INSTANCE }])
-  const [activeKey, setActiveKey] = useState(1)
-  const [addingInst,  setAddingInst]  = useState(false)
-  const [newInstName, setNewInstName] = useState('')
-  const [saving,  setSaving]  = useState(false)
-  const [loading, setLoading] = useState(!isNew)
-  const [toast,   setToast]   = useState('')
-
-  useEffect(()=>{
-    if(!assetId) return
-    async function load() {
-      setLoading(true)
-      const { data:a }     = await supabase.from('assets').select('*').eq('assetid',assetId).single()
-      const { data:insts } = await supabase.from('assetinstances').select('*').eq('assetid',assetId).eq('activestatus','A').order('instanceid')
-      if(a) setAssetMeta({ name:a.name, assettype:a.assettype, domain:a.domain||'User Domain', aigenerated:!!a.aigenerated, royaltyeligible:!!a.royaltyeligible, locked:!!a.locked, elevenlabs_voice_id:a.elevenlabs_voice_id||'' })
-      if(insts&&insts.length>0) { setInstances(insts); setActiveKey(insts[0].instanceid) }
-      setLoading(false)
-    }
-    load()
-  },[assetId])
-
-  const locked = assetMeta.locked
-  const activeInst = instances.find(i=>(i.instanceid||i._tempId)===activeKey)||instances[0]
-  function updateActiveInst(key,val) { setInstances(is=>is.map(i=>(i.instanceid||i._tempId)===activeKey?{...i,[key]:val}:i)) }
-  function showToast(msg) { setToast(msg); setTimeout(()=>setToast(''),3000) }
-
-  async function handleSave() {
-    if(!assetMeta.name.trim()) { showToast('Asset name is required'); return }
-    setSaving(true)
-    try {
-      let aid = savedAssetId
-      if(isNew) {
-        const { data:a, error:ae } = await supabase.from('assets').insert({
-          name:assetMeta.name, assetname:assetMeta.name, assettype:assetMeta.assettype, domain:assetMeta.domain,
-          aigenerated:assetMeta.aigenerated, royaltyeligible:assetMeta.royaltyeligible,
-          locked:false, activestatus:'A', createdate:new Date().toISOString(), updatedate:new Date().toISOString(),
-          createdby:endUser?.enduserid
-        }).select().single()
-        if(ae) throw ae
-        aid = a.assetid
-      } else {
-        await supabase.from('assets').update({
-          name:assetMeta.name, assetname:assetMeta.name, assettype:assetMeta.assettype, domain:assetMeta.domain,
-          aigenerated:assetMeta.aigenerated, royaltyeligible:assetMeta.royaltyeligible,
-          elevenlabs_voice_id:assetMeta.elevenlabs_voice_id||null,
-          updatedate:new Date().toISOString(), updatedby:endUser?.enduserid
-        }).eq('assetid',aid)
-      }
-      for(const inst of instances) {
-        const payload = {
-          assetid:aid, instancename:inst.instancename||'Main',
-          description:inst.description||null, characterimportance:inst.characterimportance||null,
-          speakingrole:!!inst.speakingrole, sex:inst.sex||null,
-          heightft:inst.heightft||null, heightin:inst.heightin||null, weightlbs:inst.weightlbs||null,
-          bodyshape:inst.bodyshape||null, skintone:inst.skintone||null, ethnicity:inst.ethnicity||null,
-          haircolor:inst.haircolor||null, hairlength:inst.hairlength||null, eyecolor:inst.eyecolor||null,
-          scars:inst.scars||null, tattoos:inst.tattoos||null, piercings:inst.piercings||null,
-          disabilities:inst.disabilities||null, disfigurements:inst.disfigurements||null,
-          extmaterial:inst.extmaterial||null, extcolor:inst.extcolor||null, exttexture:inst.exttexture||null,
-          intelligence:inst.intelligence||3, humor:inst.humor||3, wisdom:inst.wisdom||3, charisma:inst.charisma||3,
-          clothingdescription:inst.clothingdescription||null, timeperiod:inst.timeperiod||null,
-          setwidthft:inst.setwidthft||null, setlengthft:inst.setlengthft||null, setheightft:inst.setheightft||null,
-          dominantcolor:inst.dominantcolor||null, secondarycolor:inst.secondarycolor||null, accentcolor:inst.accentcolor||null,
-          bgimagedesc:inst.bgimagedesc||null, bgaudiodesc:inst.bgaudiodesc||null,
-          prompt:inst.prompt||null, script:inst.script||null, finalimage:inst.finalimage||null,
-          activestatus:'A', updatedate:new Date().toISOString(),
-        }
-        if(inst.instanceid) {
-          await supabase.from('assetinstances').update(payload).eq('instanceid',inst.instanceid)
-        } else {
-          await supabase.from('assetinstances').insert({...payload, createdate:new Date().toISOString()})
-        }
-      }
-      setSavedAssetId(aid)
-      showToast('Saved ✓'); onSaved&&onSaved(aid)
-    } catch(e) { showToast(`Error: ${e.message}`) }
-    setSaving(false)
-  }
-
-  async function handleClone() {
-    setSaving(true)
-    const { data:a } = await supabase.from('assets').insert({
-      name:`${assetMeta.name} (Copy)`, assetname:`${assetMeta.name} (Copy)`, assettype:assetMeta.assettype, domain:assetMeta.domain,
-      aigenerated:assetMeta.aigenerated, royaltyeligible:assetMeta.royaltyeligible,
-      locked:false, activestatus:'A', createdate:new Date().toISOString(), updatedate:new Date().toISOString(),
-      createdby:endUser?.enduserid
-    }).select().single()
-    if(a) {
-      for(const inst of instances) {
-        const { instanceid, assetid, createdate, updatedate, ...rest } = inst
-        await supabase.from('assetinstances').insert({...rest, assetid:a.assetid, createdate:new Date().toISOString(), updatedate:new Date().toISOString()})
-      }
-      onCloned&&onCloned(a.assetid)
-    }
-    setSaving(false)
-  }
-
-  async function deleteInstance(inst) {
-    if(inst.instancename==='Main') return
-    if(inst.instanceid) await supabase.from('assetinstances').update({activestatus:'H'}).eq('instanceid',inst.instanceid)
-    const remaining=instances.filter(i=>(i.instanceid||i._tempId)!==(inst.instanceid||inst._tempId))
-    setInstances(remaining); setActiveKey(remaining[0]?.instanceid||remaining[0]?._tempId)
-  }
-
-  function addInstance() {
-    if(!newInstName.trim()) return
-    const ni={_tempId:Date.now(),...BLANK_INSTANCE,instancename:newInstName.trim()}
-    setInstances(is=>[...is,ni]); setActiveKey(ni._tempId); setNewInstName(''); setAddingInst(false)
-  }
-
-  const assetMetaPlus = { ...assetMeta, onNameChange:(v)=>setAssetMeta(m=>({...m,name:v})) }
-
-  if(loading) return (
-    <div style={{ position:'fixed', top:0, right:0, bottom:0, width:'700px', background:SURFACE, borderLeft:`1px solid ${BORDER}`, zIndex:500, display:'flex', alignItems:'center', justifyContent:'center', color:MUTED }}>Loading...</div>
-  )
-
-  return (
-    <div style={{ position:'fixed', top:0, right:0, bottom:0, width:'700px', background:SURFACE, borderLeft:`1px solid ${BORDER}`, zIndex:500, display:'flex', flexDirection:'column' }}>
-      {toast && (
-        <div style={{ position:'absolute', top:'12px', left:'50%', transform:'translateX(-50%)', background:toast.startsWith('Error')?'rgba(200,75,49,0.9)':'rgba(74,156,122,0.9)', color:'#fff', padding:'8px 20px', fontSize:'0.78rem', zIndex:10, whiteSpace:'nowrap', borderRadius:'2px', pointerEvents:'none' }}>{toast}</div>
-      )}
-      {/* Header */}
-      <div style={{ padding:'14px 24px', borderBottom:`1px solid ${BORDER}`, display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
-        <div style={{ display:'flex', gap:'10px', alignItems:'center' }}>
-          <select value={assetMeta.assettype} onChange={e=>!locked&&setAssetMeta(m=>({...m,assettype:e.target.value}))} disabled={locked}
-            style={{ background:SURFACE2, border:`1px solid ${BORDER}`, color:CREAM, fontFamily:'DM Sans, sans-serif', fontSize:'0.78rem', cursor:locked?'default':'pointer', outline:'none', padding:'5px 10px' }}>
-            {ASSET_TYPES.map(t=><option key={t}>{t}</option>)}
-          </select>
-          <select value={assetMeta.domain} onChange={e=>!locked&&setAssetMeta(m=>({...m,domain:e.target.value}))} disabled={locked}
-            style={{ background:SURFACE2, border:`1px solid ${BORDER}`, color:CHARCOAL, fontFamily:'DM Sans, sans-serif', fontSize:'0.78rem', cursor:locked?'default':'pointer', outline:'none', padding:'5px 10px' }}>
-            {DOMAIN_OPTIONS.map(d=><option key={d}>{d}</option>)}
-          </select>
-          {locked&&<span style={{ background:'rgba(200,75,49,0.15)', color:RED, fontSize:'0.62rem', padding:'2px 8px', letterSpacing:'0.08em', textTransform:'uppercase' }}>🔒 Locked</span>}
-        </div>
-        <div style={{ display:'flex', gap:'8px', alignItems:'center' }}>
-          {!isNew&&<button onClick={handleClone} disabled={saving} style={{ background:'none', border:`1px solid ${BORDER}`, color:CHARCOAL, padding:'7px 14px', cursor:'pointer', fontFamily:'DM Sans, sans-serif', fontSize:'0.72rem', letterSpacing:'0.08em', textTransform:'uppercase' }}>Clone</button>}
-          {!locked&&<button onClick={handleSave} disabled={saving} style={{ background:GOLD, border:'none', color:'#1A1810', padding:'7px 20px', cursor:'pointer', fontFamily:'DM Sans, sans-serif', fontSize:'0.72rem', letterSpacing:'0.1em', textTransform:'uppercase', fontWeight:500, opacity:saving?0.7:1 }}>{saving?'Saving...':'Save'}</button>}
-          <button onClick={onClose} style={{ background:'none', border:'none', color:MUTED, cursor:'pointer', fontSize:'1rem' }}>✕</button>
-        </div>
-      </div>
-      {/* Toggles */}
-      <div style={{ padding:'6px 24px', borderBottom:`1px solid ${BORDER}`, display:'flex', gap:'32px', background:SURFACE2, flexShrink:0 }}>
-        <Toggle label="AI Generated"     value={assetMeta.aigenerated}     onChange={v=>!locked&&setAssetMeta(m=>({...m,aigenerated:v}))}     disabled={locked} />
-        <Toggle label="Royalty Eligible" value={assetMeta.royaltyeligible} onChange={v=>!locked&&setAssetMeta(m=>({...m,royaltyeligible:v}))} disabled={locked} />
-      </div>
-      {/* Instance tabs */}
-      <div style={{ borderBottom:`1px solid ${BORDER}`, background:SURFACE2, flexShrink:0, padding:'0 20px', display:'flex', alignItems:'center', overflowX:'auto' }}>
-        {instances.map(inst=>{
-          const key=inst.instanceid||inst._tempId
-          return (
-            <div key={key} style={{ display:'flex', alignItems:'center' }}>
-              <button onClick={()=>setActiveKey(key)}
-                style={{ background:'none', border:'none', borderBottom:activeKey===key?`2px solid ${GOLD}`:'2px solid transparent', color:activeKey===key?GOLD:CHARCOAL, padding:'10px 14px', cursor:'pointer', fontFamily:'DM Sans, sans-serif', fontSize:'0.78rem', whiteSpace:'nowrap', marginBottom:'-1px' }}>
-                {inst.instancename}
-              </button>
-              {inst.instancename!=='Main'&&!locked&&(
-                <button onClick={()=>deleteInstance(inst)} title="Delete" style={{ background:'none', border:'none', color:CHARCOAL, cursor:'pointer', fontSize:'0.6rem', padding:'0 4px 0 0', marginTop:'2px' }}>✕</button>
-              )}
-            </div>
-          )
-        })}
-        {!addingInst
-          ? <button onClick={()=>setAddingInst(true)} style={{ background:'none', border:'none', color:CHARCOAL, padding:'10px 12px', cursor:'pointer', fontSize:'0.75rem', whiteSpace:'nowrap' }}>+ Add Instance</button>
-          : <div style={{ display:'flex', alignItems:'center', gap:'6px', padding:'6px 8px' }}>
-              <input value={newInstName} onChange={e=>setNewInstName(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addInstance()} placeholder="Instance name" autoFocus
-                style={{ background:SURFACE, border:`1px solid ${BORDER}`, color:CREAM, padding:'4px 8px', fontFamily:'DM Sans, sans-serif', fontSize:'0.75rem', outline:'none', width:'120px' }} />
-              <button onClick={addInstance} style={{ background:GOLD, border:'none', color:'#1A1810', padding:'4px 10px', cursor:'pointer', fontSize:'0.7rem', fontFamily:'DM Sans, sans-serif' }}>Add</button>
-              <button onClick={()=>{setAddingInst(false);setNewInstName('')}} style={{ background:'none', border:'none', color:CHARCOAL, cursor:'pointer', fontSize:'0.8rem' }}>✕</button>
-            </div>
-        }
-      </div>
-      {/* Body */}
-      <div style={{ flex:1, overflowY:'auto' }}>
-        {activeInst&&(
-          <InstanceForm key={activeInst.instanceid||activeInst._tempId} data={activeInst} onChange={updateActiveInst} assetMeta={assetMetaPlus} locked={locked} onSaveReminder={()=>showToast('Image selected — hit Save to keep it ✓')} onVoiceIdSaved={(url)=>setAssetMeta(m=>({...m,elevenlabs_voice_id:url}))} />
-        )}
-      </div>
-    </div>
-  )
-}
-
 export default function Assets() {
   
 const [viewMode,     setViewMode]     = useState('grid')
@@ -1164,8 +978,6 @@ const [viewMode,     setViewMode]     = useState('grid')
   const [prodAssetIds, setProdAssetIds] = useState(null)
   const [assets,       setAssets]       = useState([])
   const [loading,      setLoading]      = useState(true)
-  const [openAssetId,  setOpenAssetId]  = useState(null)
-  const [showForm,     setShowForm]     = useState(false)
   // Auto-open asset from URL param (navigated from Development module)
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
@@ -1329,12 +1141,7 @@ const [viewMode,     setViewMode]     = useState('grid')
           </table>
         </div>
       )}
-      {showForm && (
-        <>
-          <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:499 }} onClick={closeForm} />
-          <AssetForm assetId={openAssetId} onClose={closeForm} onSaved={handleSaved} onCloned={handleCloned} />
-        </>
-      )}
+
     </div>
   )
 }
