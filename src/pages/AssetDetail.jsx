@@ -52,7 +52,7 @@ function Slider({label,value,onChange,min=0,max=1,step=0.05,note,disabled=false}
 }
 
 // ── Voice Library ─────────────────────────────────────────────
-function VoiceLibrary({onUse,onClone,onClose}){
+function VoiceLibrary({onUse,onClose,accentOptions,langOptions}){
   const [voices,setVoices]=useState([])
   const [search,setSearch]=useState("")
   const [filterGender,setFilterGender]=useState("")
@@ -64,7 +64,6 @@ function VoiceLibrary({onUse,onClone,onClose}){
   const [page,setPage]=useState(0)
   const [hasMore,setHasMore]=useState(false)
   const [loading,setLoading]=useState(false)
-  const [cloning,setCloning]=useState(null)
   const [error,setError]=useState("")
   const [playing,setPlaying]=useState(null)
   const audioRef=useRef(null)
@@ -91,24 +90,11 @@ function VoiceLibrary({onUse,onClone,onClose}){
     setLoading(false)
   }
 
-  useEffect(()=>{doSearch(true)},[filterGender,filterAge,filterAccent,filterCategory,filterLang,featured])
-
   function playPreview(v){
     if(audioRef.current){audioRef.current.pause();audioRef.current=null}
     if(playing===v.voice_id){setPlaying(null);return}
     if(!v.preview_url)return
     const a=new Audio(v.preview_url);a.onended=()=>setPlaying(null);a.play();audioRef.current=a;setPlaying(v.voice_id)
-  }
-
-  async function doClone(v){
-    setCloning(v.voice_id);setError("")
-    try{
-      const r=await fetch("/api/elevenlabs-proxy",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"clone_voice",voice_id:v.voice_id,name:v.name+" (Clone)"})})
-      const d=await r.json()
-      if(!r.ok)throw new Error(d.error)
-      onClone(d.voice_id,v.name,v.description||v.name)
-    }catch(e){setError(e.message)}
-    setCloning(null)
   }
 
   const ss={background:SURFACE2,border:"1px solid "+BORDER,color:CREAM,padding:"6px 8px",fontFamily:"DM Sans, sans-serif",fontSize:"0.72rem",outline:"none",cursor:"pointer"}
@@ -126,19 +112,36 @@ function VoiceLibrary({onUse,onClone,onClose}){
           <button onClick={()=>doSearch(true)} style={{background:"rgba(201,146,74,0.1)",border:"1px solid rgba(201,146,74,0.25)",color:GOLD,padding:"6px 14px",cursor:"pointer",fontFamily:"DM Sans, sans-serif",fontSize:"0.68rem",letterSpacing:"0.08em",textTransform:"uppercase"}}>Search</button>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px"}}>
-          <select value={filterGender} onChange={e=>setFilterGender(e.target.value)} style={ss}><option value="">All genders</option>{["male","female"].map(g=><option key={g} value={g}>{g.charAt(0).toUpperCase()+g.slice(1)}</option>)}</select>
-          <select value={filterAge} onChange={e=>setFilterAge(e.target.value)} style={ss}><option value="">All ages</option>{["young","middle_aged","old"].map(a=><option key={a} value={a}>{a.replace("_"," ")}</option>)}</select>
-          <select value={filterAccent} onChange={e=>setFilterAccent(e.target.value)} style={ss}><option value="">All accents</option>{["american","british","australian","canadian","irish","scottish","indian","african","middle_eastern","french","german","italian","spanish","swedish","norwegian","danish","dutch","polish","portuguese","russian","japanese","korean","chinese"].map(a=><option key={a} value={a}>{a.replace("_"," ")}</option>)}</select>
-          <select value={filterCategory} onChange={e=>setFilterCategory(e.target.value)} style={ss}><option value="">All categories</option>{["professional","high_quality","celebrity","generated"].map(c=><option key={c} value={c}>{c.replace("_"," ")}</option>)}</select>
-          <select value={filterLang} onChange={e=>setFilterLang(e.target.value)} style={ss}><option value="">All languages</option>{["en","es","fr","de","it","pt","ja","ko","zh","ar","nl","pl","sv","da","no","fi","ru","tr","id","hi"].map(l=><option key={l} value={l}>{l}</option>)}</select>
-          <label style={{display:"flex",alignItems:"center",gap:"6px",cursor:"pointer",fontSize:"0.72rem",color:featured?GOLD:MUTED,padding:"6px 8px",border:"1px solid "+(featured?"rgba(201,146,74,0.25)":BORDER)}}><input type="checkbox" checked={featured} onChange={e=>setFeatured(e.target.checked)} style={{accentColor:GOLD}}/>Featured only</label>
+          <select value={filterGender} onChange={e=>setFilterGender(e.target.value)} style={ss}>
+            <option value="">All genders</option>
+            {["male","female"].map(g=><option key={g} value={g}>{g.charAt(0).toUpperCase()+g.slice(1)}</option>)}
+          </select>
+          <select value={filterAge} onChange={e=>setFilterAge(e.target.value)} style={ss}>
+            <option value="">All ages</option>
+            {["young","middle_aged","old"].map(a=><option key={a} value={a}>{a.replace("_"," ")}</option>)}
+          </select>
+          <select value={filterAccent} onChange={e=>setFilterAccent(e.target.value)} style={ss}>
+            <option value="">All accents</option>
+            {accentOptions.map(a=><option key={a.nvvalue} value={a.nvvalue}>{a.nvname}</option>)}
+          </select>
+          <select value={filterCategory} onChange={e=>setFilterCategory(e.target.value)} style={ss}>
+            <option value="">All categories</option>
+            {["professional","high_quality","celebrity","generated"].map(c=><option key={c} value={c}>{c.replace("_"," ")}</option>)}
+          </select>
+          <select value={filterLang} onChange={e=>setFilterLang(e.target.value)} style={ss}>
+            <option value="">All languages</option>
+            {langOptions.map(l=><option key={l.nvvalue} value={l.nvvalue}>{l.nvname}</option>)}
+          </select>
+          <label style={{display:"flex",alignItems:"center",gap:"6px",cursor:"pointer",fontSize:"0.72rem",color:featured?GOLD:MUTED,padding:"6px 8px",border:"1px solid "+(featured?"rgba(201,146,74,0.25)":BORDER)}}>
+            <input type="checkbox" checked={featured} onChange={e=>setFeatured(e.target.checked)} style={{accentColor:GOLD}}/>Featured only
+          </label>
         </div>
-        <div style={{fontSize:"0.62rem",color:MUTED}}>{voices.length} voices{hasMore?" - more available":""}</div>
+        <div style={{fontSize:"0.62rem",color:MUTED}}>{voices.length>0?voices.length+" voices loaded"+(hasMore?" — more available":""):"Use filters or search, then click Search"}</div>
       </div>
-      {error&&<div style={{padding:"8px 20px",background:"rgba(200,75,49,0.1)",color:RED,fontSize:"0.72rem",flexShrink:0}}>&#9888; {error}</div>}
+      {error&&<div style={{padding:"8px 20px",background:"rgba(200,75,49,0.1)",color:RED,fontSize:"0.72rem",flexShrink:0}}>! {error}</div>}
       <div style={{flex:1,overflowY:"auto"}}>
-        {loading&&voices.length===0&&<div style={{padding:"24px",color:MUTED,fontSize:"0.78rem",textAlign:"center"}}>Loading voices...</div>}
-        {!loading&&voices.length===0&&<div style={{padding:"24px",color:MUTED,fontSize:"0.78rem",textAlign:"center"}}>No voices found - try different filters</div>}
+        {loading&&voices.length===0&&<div style={{padding:"24px",color:MUTED,fontSize:"0.78rem",textAlign:"center"}}>Searching...</div>}
+        {!loading&&voices.length===0&&<div style={{padding:"24px",color:MUTED,fontSize:"0.78rem",textAlign:"center",lineHeight:1.6}}>Set filters or enter a search term above,<br/>then click Search.</div>}
         {voices.map(v=>(
           <div key={v.voice_id} style={{padding:"10px 20px",borderBottom:"1px solid rgba(201,146,74,0.06)",display:"flex",alignItems:"center",gap:"8px"}}
             onMouseEnter={e=>e.currentTarget.style.background="rgba(201,146,74,0.03)"}
@@ -156,7 +159,6 @@ function VoiceLibrary({onUse,onClone,onClose}){
             </div>
             {v.preview_url&&<button onClick={()=>playPreview(v)} style={{width:"26px",height:"26px",background:playing===v.voice_id?GOLD:"rgba(255,255,255,0.06)",border:"1px solid "+(playing===v.voice_id?GOLD:BORDER),color:playing===v.voice_id?SURFACE:CREAM,cursor:"pointer",fontSize:"0.58rem",flexShrink:0}}>{playing===v.voice_id?"stop":"play"}</button>}
             <button onClick={()=>onUse(v.voice_id,v.name)} style={{background:"rgba(201,146,74,0.1)",border:"1px solid rgba(201,146,74,0.25)",color:GOLD,padding:"4px 9px",cursor:"pointer",fontFamily:"DM Sans, sans-serif",fontSize:"0.62rem",letterSpacing:"0.08em",textTransform:"uppercase",flexShrink:0}}>Use</button>
-            <button onClick={()=>doClone(v)} disabled={cloning===v.voice_id} style={{background:"rgba(122,158,200,0.08)",border:"1px solid rgba(122,158,200,0.2)",color:BLUE,padding:"4px 9px",cursor:cloning===v.voice_id?"wait":"pointer",fontFamily:"DM Sans, sans-serif",fontSize:"0.62rem",letterSpacing:"0.08em",textTransform:"uppercase",flexShrink:0}}>{cloning===v.voice_id?"...":"Clone"}</button>
           </div>
         ))}
         {hasMore&&<div style={{padding:"16px 20px",textAlign:"center"}}>

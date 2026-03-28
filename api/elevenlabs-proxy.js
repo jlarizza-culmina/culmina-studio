@@ -134,24 +134,6 @@ export default async function handler(req, res) {
       return res.status(200).json({ voice_id: data.voice_id })
     }
 
-    // ── CLONE VOICE ──────────────────────────────────────────────────────────
-    if (action === 'clone_voice') {
-      const { voice_id: srcId, name: cloneName } = req.body || {}
-      if (!srcId) return res.status(400).json({ error: 'voice_id required' })
-      const infoR = await fetch(`https://api.elevenlabs.io/v1/voices/${srcId}`, { headers: { 'xi-api-key': apiKey } })
-      const info  = await infoR.json()
-      const addR  = await fetch('https://api.elevenlabs.io/v1/voices/add', {
-        method: 'POST',
-        headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ public_owner_id: info.sharing?.original_voice_id, voice_id: srcId })
-      })
-      if (addR.ok) {
-        const addData = await addR.json()
-        return res.status(200).json({ voice_id: addData.voice_id || srcId })
-      }
-      return res.status(200).json({ voice_id: srcId, note: 'Using original voice_id' })
-    }
-
     // ── LIST SHARED VOICES (public library with server-side filtering) ─────────
     if (action === 'list_voices') {
       const { gender, age, accent, language, category, use_case, search, page = 0, page_size = 100, featured } = req.body || {}
