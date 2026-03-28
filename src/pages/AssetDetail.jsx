@@ -183,6 +183,12 @@ function VoiceTab({data,onChange,locked,assetMeta,onVoiceIdChange,savedAssetId})
   const [previewText,setPreviewText]=useState("Hello, my name is the character and this is a preview of my voice for this production. I am here to help tell the story.")
   const [error,setError]=useState('')
   const draftsKey=`vd_${savedAssetId}_${data.instancename||'main'}`
+  const [accentOpts,setAccentOpts]=useState([])
+  const [langOpts,setLangOpts]=useState([])
+  useEffect(()=>{
+    supabase.from('nvpair').select('nvname,nvvalue').eq('nvgroup','ELAccent').eq('active',true).order('nvname').then(({data:d})=>setAccentOpts(d||[]))
+    supabase.from('nvpair').select('nvname,nvvalue').eq('nvgroup','ELLanguage').eq('active',true).order('nvname').then(({data:d})=>setLangOpts(d||[]))
+  },[])
 
   useEffect(()=>{try{const s=sessionStorage.getItem(draftsKey);if(s)setDrafts(JSON.parse(s))}catch(e){}},[draftsKey])
   function saveDrafts(d){setDrafts(d);try{sessionStorage.setItem(draftsKey,JSON.stringify(d))}catch(e){}}
@@ -247,9 +253,10 @@ function VoiceTab({data,onChange,locked,assetMeta,onVoiceIdChange,savedAssetId})
   return(
     <div style={{padding:'24px 28px 60px'}}>
       {showLib&&<VoiceLibrary
-        onUse={(id,name)=>{onVoiceIdChange(id);setShowLib(false)}}
-        onClone={(id,name,desc)=>{onVoiceIdChange(id);onChange('voiceprompt',(desc||name).slice(0,1000));setShowLib(false)}}
-        onClose={()=>setShowLib(false)}/>}
+        onUse={(id)=>{onVoiceIdChange(id);setShowLib(false)}}
+        onClose={()=>setShowLib(false)}
+        accentOptions={accentOpts}
+        langOptions={langOpts}/>}
 
       {/* Model */}
       <div style={{marginBottom:'16px'}}>
@@ -298,7 +305,7 @@ function VoiceTab({data,onChange,locked,assetMeta,onVoiceIdChange,savedAssetId})
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'12px'}}>
           <div><div style={lbl}>Age</div><input value={data.voiceage||''} onChange={e=>!locked&&onChange('voiceage',e.target.value)} disabled={locked} style={mkI(locked)} placeholder="e.g. late 20s, mid 50s"/></div>
           <div><div style={lbl}>Gender</div><select value={data.voicegender||''} onChange={e=>!locked&&onChange('voicegender',e.target.value)} disabled={locked} style={mkS(locked)}><option value="">— Select —</option>{['Male','Female','Neutral'].map(o=><option key={o}>{o}</option>)}</select></div>
-          <div><div style={lbl}>Accent</div><input value={data.voiceaccent||''} onChange={e=>!locked&&onChange('voiceaccent',e.target.value)} disabled={locked} style={mkI(locked)} placeholder="e.g. RP British, Eastern European"/></div>
+          <div><div style={lbl}>Accent</div><select value={data.voiceaccent||''} onChange={e=>!locked&&onChange('voiceaccent',e.target.value)} disabled={locked} style={mkS(locked)}><option value="">-- Select --</option>{(accentOpts||[]).map(a=><option key={a.nvvalue} value={a.nvvalue}>{a.nvname}</option>)}</select></div>
           <div><div style={lbl}>Tone / Timbre</div><input value={data.voicetone||''} onChange={e=>!locked&&onChange('voicetone',e.target.value)} disabled={locked} style={mkI(locked)} placeholder="e.g. Gravelly, breathy, crisp"/></div>
           <div><div style={lbl}>Pacing</div><input value={data.voicepacing||''} onChange={e=>!locked&&onChange('voicepacing',e.target.value)} disabled={locked} style={mkI(locked)} placeholder="e.g. Slow and deliberate"/></div>
           <div><div style={lbl}>Emotional Range</div><select value={data.voiceemotionalrange||''} onChange={e=>!locked&&onChange('voiceemotionalrange',e.target.value)} disabled={locked} style={mkS(locked)}><option value="">— Select —</option>{['Wide','Neutral','Narrow'].map(o=><option key={o}>{o}</option>)}</select></div>
