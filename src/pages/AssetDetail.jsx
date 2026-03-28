@@ -75,10 +75,19 @@ function VoiceLibrary({onUse,onClose,accentOptions=[],langOptions=[]}){
       const body={action:"list_voices",page_size:50,page:pg}
       if(filterGender)body.gender=filterGender
       if(filterAge)body.age=filterAge
-      if(filterAccent)body.accent=filterAccent
+      // US regional accents aren't valid API filter values — convert to search term
+      if(filterAccent){
+        if(filterAccent.startsWith("us - ")){
+          const regionSearch=filterAccent.replace("us - ","")
+          body.search=search?search+" "+regionSearch:regionSearch
+        } else {
+          body.accent=filterAccent
+        }
+      }
       if(filterCategory)body.category=filterCategory
       if(filterLang)body.language=filterLang
-      if(search)body.search=search
+      if(search&&!body.search)body.search=search
+      else if(search&&body.search)body.search=body.search+" "+search
       if(featured)body.featured=true
       const r=await fetch("/api/elevenlabs-proxy",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})
       const d=await r.json()
@@ -120,17 +129,17 @@ function VoiceLibrary({onUse,onClose,accentOptions=[],langOptions=[]}){
             <option value="">All ages</option>
             {["young","middle_aged","old"].map(a=><option key={a} value={a}>{a.replace("_"," ")}</option>)}
           </select>
-          <select value={filterAccent} onChange={e=>setFilterAccent(e.target.value)} style={ss}>
+          <select value={filterLang} onChange={e=>{setFilterLang(e.target.value);if(e.target.value!=="en")setFilterAccent("")}} style={ss}>
+            <option value="">All languages</option>
+            {(langOptions||[]).map(l=><option key={l.nvvalue} value={l.nvvalue}>{l.nvname}</option>)}
+          </select>
+          <select value={filterAccent} onChange={e=>setFilterAccent(e.target.value)} disabled={filterLang!==""&&filterLang!=="en"} style={{...ss,opacity:filterLang!==""&&filterLang!=="en"?0.35:1,cursor:filterLang!==""&&filterLang!=="en"?"not-allowed":"pointer"}}>
             <option value="">All accents</option>
             {(accentOptions||[]).map(a=><option key={a.nvvalue} value={a.nvvalue}>{a.nvname}</option>)}
           </select>
           <select value={filterCategory} onChange={e=>setFilterCategory(e.target.value)} style={ss}>
             <option value="">All categories</option>
             {["professional","high_quality","celebrity","generated"].map(c=><option key={c} value={c}>{c.replace("_"," ")}</option>)}
-          </select>
-          <select value={filterLang} onChange={e=>setFilterLang(e.target.value)} style={ss}>
-            <option value="">All languages</option>
-            {(langOptions||[]).map(l=><option key={l.nvvalue} value={l.nvvalue}>{l.nvname}</option>)}
           </select>
           <label style={{display:"flex",alignItems:"center",gap:"6px",cursor:"pointer",fontSize:"0.72rem",color:featured?GOLD:MUTED,padding:"6px 8px",border:"1px solid "+(featured?"rgba(201,146,74,0.25)":BORDER)}}>
             <input type="checkbox" checked={featured} onChange={e=>setFeatured(e.target.checked)} style={{accentColor:GOLD}}/>Featured only
