@@ -52,7 +52,7 @@ function Slider({label,value,onChange,min=0,max=1,step=0.05,note,disabled=false}
 }
 
 // ── Voice Library ─────────────────────────────────────────────
-function VoiceLibrary({onUse,onClose,accentOptions,langOptions}){
+function VoiceLibrary({onUse,onClose,accentOptions=[],langOptions=[]}){
   const [voices,setVoices]=useState([])
   const [search,setSearch]=useState("")
   const [filterGender,setFilterGender]=useState("")
@@ -122,7 +122,7 @@ function VoiceLibrary({onUse,onClose,accentOptions,langOptions}){
           </select>
           <select value={filterAccent} onChange={e=>setFilterAccent(e.target.value)} style={ss}>
             <option value="">All accents</option>
-            {accentOptions.map(a=><option key={a.nvvalue} value={a.nvvalue}>{a.nvname}</option>)}
+            {(accentOptions||[]).map(a=><option key={a.nvvalue} value={a.nvvalue}>{a.nvname}</option>)}
           </select>
           <select value={filterCategory} onChange={e=>setFilterCategory(e.target.value)} style={ss}>
             <option value="">All categories</option>
@@ -130,7 +130,7 @@ function VoiceLibrary({onUse,onClose,accentOptions,langOptions}){
           </select>
           <select value={filterLang} onChange={e=>setFilterLang(e.target.value)} style={ss}>
             <option value="">All languages</option>
-            {langOptions.map(l=><option key={l.nvvalue} value={l.nvvalue}>{l.nvname}</option>)}
+            {(langOptions||[]).map(l=><option key={l.nvvalue} value={l.nvvalue}>{l.nvname}</option>)}
           </select>
           <label style={{display:"flex",alignItems:"center",gap:"6px",cursor:"pointer",fontSize:"0.72rem",color:featured?GOLD:MUTED,padding:"6px 8px",border:"1px solid "+(featured?"rgba(201,146,74,0.25)":BORDER)}}>
             <input type="checkbox" checked={featured} onChange={e=>setFeatured(e.target.checked)} style={{accentColor:GOLD}}/>Featured only
