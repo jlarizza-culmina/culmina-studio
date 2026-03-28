@@ -14,7 +14,7 @@ const EL_MODELS=[
   {id:'eleven_v3',label:'Eleven v3 — Max expressiveness'},
 ]
 const BLANK={
-  instancename:'Main',description:'',characterimportance:'Lead',speakingrole:false,
+  description:'',characterimportance:'Lead',speakingrole:false,
   sex:'',heightft:5,heightin:6,weightlbs:140,bodyshape:'',skintone:'',ethnicity:'',
   haircolor:'',hairlength:'',eyecolor:'',scars:'',tattoos:'',piercings:'',disabilities:'',disfigurements:'',
   extmaterial:'',extcolor:'',exttexture:'',intelligence:3,humor:3,wisdom:3,charisma:3,
@@ -51,47 +51,44 @@ function Slider({label,value,onChange,min=0,max=1,step=0.05,note,disabled=false}
   return(<div style={{marginBottom:'18px',opacity:disabled?0.5:1}}><div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'5px'}}><span style={lbl}>{label}</span><span style={{fontSize:'0.8rem',color:GOLD,fontFamily:'monospace',marginBottom:'6px'}}>{typeof value==='number'?value.toFixed(2):value}</span></div><input type="range" min={min} max={max} step={step} value={value} onChange={e=>!disabled&&onChange(parseFloat(e.target.value))} disabled={disabled} style={{width:'100%',accentColor:GOLD,cursor:disabled?'default':'pointer'}}/>{note&&<div style={{fontSize:'0.62rem',color:MUTED,marginTop:'4px',lineHeight:1.5}}>{note}</div>}</div>)
 }
 
-// ── Voice Library ─────────────────────────────────────────────
+// ── Voice Library ─────────────────────────────────────────────────────────────
 function VoiceLibrary({onUse,onClose,accentOptions=[],langOptions=[]}){
   const [voices,setVoices]=useState([])
-  const [search,setSearch]=useState("")
-  const [filterGender,setFilterGender]=useState("")
-  const [filterAge,setFilterAge]=useState("")
-  const [filterAccent,setFilterAccent]=useState("")
-  const [filterCategory,setFilterCategory]=useState("")
-  const [filterLang,setFilterLang]=useState("")
+  const [search,setSearch]=useState('')
+  const [filterGender,setFilterGender]=useState('')
+  const [filterAge,setFilterAge]=useState('')
+  const [filterAccent,setFilterAccent]=useState('')
+  const [filterCategory,setFilterCategory]=useState('')
+  const [filterLang,setFilterLang]=useState('')
   const [featured,setFeatured]=useState(false)
   const [page,setPage]=useState(0)
   const [hasMore,setHasMore]=useState(false)
   const [loading,setLoading]=useState(false)
-  const [error,setError]=useState("")
+  const [error,setError]=useState('')
   const [playing,setPlaying]=useState(null)
   const audioRef=useRef(null)
 
   async function doSearch(reset=false){
-    setLoading(true);setError("")
+    setLoading(true);setError('')
     const pg=reset?0:page
     try{
-      const body={action:"list_voices",page_size:50,page:pg}
+      const body={action:'list_voices',page_size:50,page:pg}
       if(filterGender)body.gender=filterGender
       if(filterAge)body.age=filterAge
-      // US regional accents aren't valid API filter values — convert to search term
       if(filterAccent){
-        if(filterAccent.startsWith("us - ")){
-          const regionSearch=filterAccent.replace("us - ","")
-          body.search=search?search+" "+regionSearch:regionSearch
-        } else {
-          body.accent=filterAccent
-        }
+        if(filterAccent.startsWith('us - ')){
+          const r=filterAccent.replace('us - ','')
+          body.search=search?search+' '+r:r
+        }else{body.accent=filterAccent}
       }
       if(filterCategory)body.category=filterCategory
       if(filterLang)body.language=filterLang
       if(search&&!body.search)body.search=search
-      else if(search&&body.search)body.search=body.search+" "+search
+      else if(search&&body.search)body.search=body.search+' '+search
       if(featured)body.featured=true
-      const r=await fetch("/api/elevenlabs-proxy",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})
+      const r=await fetch('/api/elevenlabs-proxy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
       const d=await r.json()
-      if(!r.ok)throw new Error(d.error||"Error fetching voices")
+      if(!r.ok)throw new Error(d.error||'Error fetching voices')
       setVoices(v=>reset?d.voices:[...v,...(d.voices||[])])
       setHasMore(d.has_more||false)
       if(reset)setPage(0)
@@ -106,81 +103,64 @@ function VoiceLibrary({onUse,onClose,accentOptions=[],langOptions=[]}){
     const a=new Audio(v.preview_url);a.onended=()=>setPlaying(null);a.play();audioRef.current=a;setPlaying(v.voice_id)
   }
 
-  const ss={background:SURFACE2,border:"1px solid "+BORDER,color:CREAM,padding:"6px 8px",fontFamily:"DM Sans, sans-serif",fontSize:"0.72rem",outline:"none",cursor:"pointer"}
+  const ss={background:SURFACE2,border:`1px solid ${BORDER}`,color:CREAM,padding:'6px 8px',fontFamily:'DM Sans, sans-serif',fontSize:'0.72rem',outline:'none',cursor:'pointer'}
+  const accentDisabled=filterLang!==''&&filterLang!=='en'
 
   return(
-    <div style={{position:"fixed",top:0,right:0,bottom:0,width:"460px",background:SURFACE,borderLeft:"1px solid "+BORDER,zIndex:200,display:"flex",flexDirection:"column",boxShadow:"-8px 0 32px rgba(0,0,0,0.6)"}}>
-      <div style={{padding:"14px 20px",borderBottom:"1px solid "+BORDER,display:"flex",alignItems:"center",gap:"10px",flexShrink:0}}>
-        <div style={{fontSize:"0.68rem",color:GOLD,letterSpacing:"0.14em",textTransform:"uppercase",flex:1}}>ElevenLabs Voice Library</div>
-        <button onClick={onClose} style={{background:"none",border:"none",color:MUTED,cursor:"pointer",fontSize:"1.1rem"}}>x</button>
+    <div style={{position:'fixed',top:0,right:0,bottom:0,width:'460px',background:SURFACE,borderLeft:`1px solid ${BORDER}`,zIndex:200,display:'flex',flexDirection:'column',boxShadow:'-8px 0 32px rgba(0,0,0,0.6)'}}>
+      <div style={{padding:'14px 20px',borderBottom:`1px solid ${BORDER}`,display:'flex',alignItems:'center',gap:'10px',flexShrink:0}}>
+        <div style={{fontSize:'0.68rem',color:GOLD,letterSpacing:'0.14em',textTransform:'uppercase',flex:1}}>ElevenLabs Voice Library</div>
+        <button onClick={onClose} style={{background:'none',border:'none',color:MUTED,cursor:'pointer',fontSize:'1.1rem'}}>✕</button>
       </div>
-      <div style={{padding:"10px 20px",borderBottom:"1px solid "+BORDER,flexShrink:0,display:"flex",flexDirection:"column",gap:"8px"}}>
-        <div style={{display:"flex",gap:"8px"}}>
-          <input value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>e.key==="Enter"&&doSearch(true)} placeholder="Search name or description"
-            style={{flex:1,background:SURFACE2,border:"1px solid "+BORDER,color:CREAM,padding:"7px 12px",fontFamily:"DM Sans, sans-serif",fontSize:"0.8rem",outline:"none",boxSizing:"border-box"}}/>
-          <button onClick={()=>doSearch(true)} style={{background:"rgba(201,146,74,0.1)",border:"1px solid rgba(201,146,74,0.25)",color:GOLD,padding:"6px 14px",cursor:"pointer",fontFamily:"DM Sans, sans-serif",fontSize:"0.68rem",letterSpacing:"0.08em",textTransform:"uppercase"}}>Search</button>
+      <div style={{padding:'10px 20px',borderBottom:`1px solid ${BORDER}`,flexShrink:0,display:'flex',flexDirection:'column',gap:'8px'}}>
+        <div style={{display:'flex',gap:'8px'}}>
+          <input value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>e.key==='Enter'&&doSearch(true)} placeholder="Search name or description…"
+            style={{flex:1,background:SURFACE2,border:`1px solid ${BORDER}`,color:CREAM,padding:'7px 12px',fontFamily:'DM Sans, sans-serif',fontSize:'0.8rem',outline:'none',boxSizing:'border-box'}}/>
+          <button onClick={()=>doSearch(true)} style={{background:'rgba(201,146,74,0.1)',border:`1px solid rgba(201,146,74,0.25)`,color:GOLD,padding:'6px 14px',cursor:'pointer',fontFamily:'DM Sans, sans-serif',fontSize:'0.68rem',letterSpacing:'0.08em',textTransform:'uppercase'}}>Search</button>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px"}}>
-          <select value={filterGender} onChange={e=>setFilterGender(e.target.value)} style={ss}>
-            <option value="">All genders</option>
-            {["male","female"].map(g=><option key={g} value={g}>{g.charAt(0).toUpperCase()+g.slice(1)}</option>)}
-          </select>
-          <select value={filterAge} onChange={e=>setFilterAge(e.target.value)} style={ss}>
-            <option value="">All ages</option>
-            {["young","middle_aged","old"].map(a=><option key={a} value={a}>{a.replace("_"," ")}</option>)}
-          </select>
-          <select value={filterLang} onChange={e=>{setFilterLang(e.target.value);if(e.target.value!=="en")setFilterAccent("")}} style={ss}>
-            <option value="">All languages</option>
-            {(langOptions||[]).map(l=><option key={l.nvvalue} value={l.nvvalue}>{l.nvname}</option>)}
-          </select>
-          <select value={filterAccent} onChange={e=>setFilterAccent(e.target.value)} disabled={filterLang!==""&&filterLang!=="en"} style={{...ss,opacity:filterLang!==""&&filterLang!=="en"?0.35:1,cursor:filterLang!==""&&filterLang!=="en"?"not-allowed":"pointer"}}>
-            <option value="">All accents</option>
-            {(accentOptions||[]).map(a=><option key={a.nvvalue} value={a.nvvalue}>{a.nvname}</option>)}
-          </select>
-          <select value={filterCategory} onChange={e=>setFilterCategory(e.target.value)} style={ss}>
-            <option value="">All categories</option>
-            {["professional","high_quality","celebrity","generated"].map(c=><option key={c} value={c}>{c.replace("_"," ")}</option>)}
-          </select>
-          <label style={{display:"flex",alignItems:"center",gap:"6px",cursor:"pointer",fontSize:"0.72rem",color:featured?GOLD:MUTED,padding:"6px 8px",border:"1px solid "+(featured?"rgba(201,146,74,0.25)":BORDER)}}>
-            <input type="checkbox" checked={featured} onChange={e=>setFeatured(e.target.checked)} style={{accentColor:GOLD}}/>Featured only
-          </label>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'6px'}}>
+          <select value={filterGender} onChange={e=>setFilterGender(e.target.value)} style={ss}><option value="">All genders</option>{['male','female'].map(g=><option key={g} value={g}>{g.charAt(0).toUpperCase()+g.slice(1)}</option>)}</select>
+          <select value={filterAge} onChange={e=>setFilterAge(e.target.value)} style={ss}><option value="">All ages</option>{['young','middle_aged','old'].map(a=><option key={a} value={a}>{a.replace('_',' ')}</option>)}</select>
+          <select value={filterLang} onChange={e=>{setFilterLang(e.target.value);if(e.target.value!=='en')setFilterAccent('')}} style={ss}><option value="">All languages</option>{(langOptions||[]).map(l=><option key={l.nvvalue} value={l.nvvalue}>{l.nvname}</option>)}</select>
+          <select value={filterAccent} onChange={e=>setFilterAccent(e.target.value)} disabled={accentDisabled} style={{...ss,opacity:accentDisabled?0.35:1,cursor:accentDisabled?'not-allowed':'pointer'}}><option value="">All accents</option>{(accentOptions||[]).map(a=><option key={a.nvvalue} value={a.nvvalue}>{a.nvname}</option>)}</select>
+          <select value={filterCategory} onChange={e=>setFilterCategory(e.target.value)} style={ss}><option value="">All categories</option>{['professional','high_quality','celebrity','generated'].map(c=><option key={c} value={c}>{c.replace('_',' ')}</option>)}</select>
+          <label style={{display:'flex',alignItems:'center',gap:'6px',cursor:'pointer',fontSize:'0.72rem',color:featured?GOLD:MUTED,padding:'6px 8px',border:`1px solid ${featured?'rgba(201,146,74,0.25)':BORDER}`}}><input type="checkbox" checked={featured} onChange={e=>setFeatured(e.target.checked)} style={{accentColor:GOLD}}/>Featured only</label>
         </div>
-        <div style={{fontSize:"0.62rem",color:MUTED}}>{voices.length>0?voices.length+" voices loaded"+(hasMore?" — more available":""):"Use filters or search, then click Search"}</div>
+        <div style={{fontSize:'0.62rem',color:MUTED}}>{voices.length>0?`${voices.length} voices loaded${hasMore?' — more available':''}`:'Set filters or search, then click Search'}</div>
       </div>
-      {error&&<div style={{padding:"8px 20px",background:"rgba(200,75,49,0.1)",color:RED,fontSize:"0.72rem",flexShrink:0}}>! {error}</div>}
-      <div style={{flex:1,overflowY:"auto"}}>
-        {loading&&voices.length===0&&<div style={{padding:"24px",color:MUTED,fontSize:"0.78rem",textAlign:"center"}}>Searching...</div>}
-        {!loading&&voices.length===0&&<div style={{padding:"24px",color:MUTED,fontSize:"0.78rem",textAlign:"center",lineHeight:1.6}}>Set filters or enter a search term above,<br/>then click Search.</div>}
+      {error&&<div style={{padding:'8px 20px',background:'rgba(200,75,49,0.1)',color:RED,fontSize:'0.72rem',flexShrink:0}}>⚠ {error}</div>}
+      <div style={{flex:1,overflowY:'auto'}}>
+        {loading&&voices.length===0&&<div style={{padding:'24px',color:MUTED,fontSize:'0.78rem',textAlign:'center'}}>Searching…</div>}
+        {!loading&&voices.length===0&&<div style={{padding:'24px',color:MUTED,fontSize:'0.78rem',textAlign:'center',lineHeight:1.6}}>Set filters or enter a search term,<br/>then click Search.</div>}
         {voices.map(v=>(
-          <div key={v.voice_id} style={{padding:"10px 20px",borderBottom:"1px solid rgba(201,146,74,0.06)",display:"flex",alignItems:"center",gap:"8px"}}
-            onMouseEnter={e=>e.currentTarget.style.background="rgba(201,146,74,0.03)"}
-            onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+          <div key={v.voice_id} style={{padding:'10px 20px',borderBottom:`1px solid rgba(201,146,74,0.06)`,display:'flex',alignItems:'center',gap:'8px'}}
+            onMouseEnter={e=>e.currentTarget.style.background='rgba(201,146,74,0.03)'}
+            onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
             <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:"0.83rem",color:CREAM,marginBottom:"2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{v.name}</div>
-              <div style={{fontSize:"0.62rem",color:MUTED,display:"flex",gap:"6px",flexWrap:"wrap"}}>
-                {v.category&&<span style={{background:"rgba(122,158,200,0.12)",color:BLUE,padding:"1px 5px",borderRadius:"2px"}}>{v.category}</span>}
+              <div style={{fontSize:'0.83rem',color:CREAM,marginBottom:'2px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{v.name}</div>
+              <div style={{fontSize:'0.62rem',color:MUTED,display:'flex',gap:'6px',flexWrap:'wrap'}}>
+                {v.category&&<span style={{background:'rgba(122,158,200,0.12)',color:BLUE,padding:'1px 5px',borderRadius:'2px'}}>{v.category}</span>}
                 {v.gender&&<span>{v.gender}</span>}
-                {v.accent&&<span>- {v.accent}</span>}
-                {v.age&&<span>- {v.age}</span>}
-                {v.use_case&&<span>- {v.use_case.replace(/_/g," ")}</span>}
+                {v.accent&&<span>· {v.accent}</span>}
+                {v.age&&<span>· {v.age}</span>}
+                {v.use_case&&<span>· {v.use_case.replace(/_/g,' ')}</span>}
               </div>
-              {v.description&&<div style={{fontSize:"0.6rem",color:MUTED,marginTop:"2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",opacity:0.7}}>{v.description}</div>}
+              {v.description&&<div style={{fontSize:'0.6rem',color:MUTED,marginTop:'2px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',opacity:0.7}}>{v.description}</div>}
             </div>
-            {v.preview_url&&<button onClick={()=>playPreview(v)} style={{width:"26px",height:"26px",background:playing===v.voice_id?GOLD:"rgba(255,255,255,0.06)",border:"1px solid "+(playing===v.voice_id?GOLD:BORDER),color:playing===v.voice_id?SURFACE:CREAM,cursor:"pointer",fontSize:"0.58rem",flexShrink:0}}>{playing===v.voice_id?"stop":"play"}</button>}
-            <button onClick={()=>onUse(v.voice_id,v.name)} style={{background:"rgba(201,146,74,0.1)",border:"1px solid rgba(201,146,74,0.25)",color:GOLD,padding:"4px 9px",cursor:"pointer",fontFamily:"DM Sans, sans-serif",fontSize:"0.62rem",letterSpacing:"0.08em",textTransform:"uppercase",flexShrink:0}}>Use</button>
+            {v.preview_url&&<button onClick={()=>playPreview(v)} style={{width:'26px',height:'26px',background:playing===v.voice_id?GOLD:'rgba(255,255,255,0.06)',border:`1px solid ${playing===v.voice_id?GOLD:BORDER}`,color:playing===v.voice_id?SURFACE:CREAM,cursor:'pointer',fontSize:'0.58rem',flexShrink:0}}>{playing===v.voice_id?'■':'▶'}</button>}
+            <button onClick={()=>onUse(v.voice_id,v.name)} style={{background:'rgba(201,146,74,0.1)',border:`1px solid rgba(201,146,74,0.25)`,color:GOLD,padding:'4px 9px',cursor:'pointer',fontFamily:'DM Sans, sans-serif',fontSize:'0.62rem',letterSpacing:'0.08em',textTransform:'uppercase',flexShrink:0}}>Use</button>
           </div>
         ))}
-        {hasMore&&<div style={{padding:"16px 20px",textAlign:"center"}}>
+        {hasMore&&<div style={{padding:'16px 20px',textAlign:'center'}}>
           <button onClick={()=>{const np=page+1;setPage(np);setTimeout(()=>doSearch(false),0)}} disabled={loading}
-            style={{background:"rgba(201,146,74,0.08)",border:"1px solid rgba(201,146,74,0.2)",color:GOLD,padding:"7px 20px",cursor:"pointer",fontFamily:"DM Sans, sans-serif",fontSize:"0.68rem",letterSpacing:"0.08em",textTransform:"uppercase"}}>
-            {loading?"Loading...":"Load More"}
+            style={{background:'rgba(201,146,74,0.08)',border:`1px solid rgba(201,146,74,0.2)`,color:GOLD,padding:'7px 20px',cursor:'pointer',fontFamily:'DM Sans, sans-serif',fontSize:'0.68rem',letterSpacing:'0.08em',textTransform:'uppercase'}}>
+            {loading?'Loading…':'Load More'}
           </button>
         </div>}
       </div>
     </div>
   )
 }
-
 
 // ── Voice Tab ─────────────────────────────────────────────────────────────────
 function VoiceTab({data,onChange,locked,assetMeta,onVoiceIdChange,savedAssetId}){
@@ -189,17 +169,18 @@ function VoiceTab({data,onChange,locked,assetMeta,onVoiceIdChange,savedAssetId})
   const [numPrev,setNumPrev]=useState(1)
   const [generating,setGenerating]=useState(false)
   const [genPrompt,setGenPrompt]=useState(false)
-  const [previewText,setPreviewText]=useState("Hello, my name is the character and this is a preview of my voice for this production. I am here to help tell the story.")
+  const [previewText,setPreviewText]=useState('Hello, my name is the character and this is a preview of my voice for this production. I am here to help tell the story.')
   const [error,setError]=useState('')
-  const draftsKey=`vd_${savedAssetId}_${data.instancename||'main'}`
   const [accentOpts,setAccentOpts]=useState([])
   const [langOpts,setLangOpts]=useState([])
+  const draftsKey=`vd_${savedAssetId}`
+
   useEffect(()=>{
     supabase.from('nvpair').select('nvname,nvvalue').eq('nvgroup','ELAccent').eq('active',true).order('nvname').then(({data:d})=>setAccentOpts(d||[]))
     supabase.from('nvpair').select('nvname,nvvalue').eq('nvgroup','ELLanguage').eq('active',true).order('nvname').then(({data:d})=>setLangOpts(d||[]))
-  },[])
+    try{const s=sessionStorage.getItem(draftsKey);if(s)setDrafts(JSON.parse(s))}catch(e){}
+  },[draftsKey])
 
-  useEffect(()=>{try{const s=sessionStorage.getItem(draftsKey);if(s)setDrafts(JSON.parse(s))}catch(e){}},[draftsKey])
   function saveDrafts(d){setDrafts(d);try{sessionStorage.setItem(draftsKey,JSON.stringify(d))}catch(e){}}
 
   const voicePromptLen=(data.voiceprompt||'').length
@@ -261,13 +242,8 @@ function VoiceTab({data,onChange,locked,assetMeta,onVoiceIdChange,savedAssetId})
 
   return(
     <div style={{padding:'24px 28px 60px'}}>
-      {showLib&&<VoiceLibrary
-        onUse={(id)=>{onVoiceIdChange(id);setShowLib(false)}}
-        onClose={()=>setShowLib(false)}
-        accentOptions={accentOpts}
-        langOptions={langOpts}/>}
+      {showLib&&<VoiceLibrary onUse={(id)=>{onVoiceIdChange(id);setShowLib(false)}} onClose={()=>setShowLib(false)} accentOptions={accentOpts} langOptions={langOpts}/>}
 
-      {/* Model */}
       <div style={{marginBottom:'16px'}}>
         <div style={lbl}>ElevenLabs Model</div>
         <select value={data.soundaimodel||'eleven_multilingual_v2'} onChange={e=>!locked&&onChange('soundaimodel',e.target.value)} disabled={locked} style={mkS(locked)}>
@@ -275,7 +251,6 @@ function VoiceTab({data,onChange,locked,assetMeta,onVoiceIdChange,savedAssetId})
         </select>
       </div>
 
-      {/* Voice ID */}
       <div style={{marginBottom:'20px'}}>
         <div style={lbl}>Voice ID</div>
         <div style={{display:'flex',gap:'8px'}}>
@@ -288,7 +263,7 @@ function VoiceTab({data,onChange,locked,assetMeta,onVoiceIdChange,savedAssetId})
           {voiceId&&(
             <button onClick={async()=>{
               try{
-                const safe=previewText.length>=100?previewText:previewText+'  Voice preview for Culmina Studios character in micro-drama production.'
+                const safe=previewText.length>=100?previewText:previewText+'  Voice preview for Culmina Studios character.'
                 const r=await fetch('/api/elevenlabs-proxy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'tts',voice_id:voiceId,text:safe,stability:data.voicestabilityscore??0.5})})
                 const d=await r.json()
                 const src=d.url||(d.audio_base64?`data:audio/mpeg;base64,${d.audio_base64}`:null)
@@ -301,20 +276,18 @@ function VoiceTab({data,onChange,locked,assetMeta,onVoiceIdChange,savedAssetId})
         </div>
       </div>
 
-      {/* Sliders */}
       <Sec title="Voice Settings" open={true}><div style={{paddingTop:'10px'}}>
-        <Slider label="Speed" value={data.voicespeed??1.0} onChange={v=>onChange('voicespeed',v)} min={0.5} max={2.0} step={0.05} disabled={locked} note="Most natural: 0.9–1.1×. Slower for complex topics, faster for routine information."/>
-        <Slider label="Stability" value={data.voicestabilityscore??0.5} onChange={v=>onChange('voicestabilityscore',v)} min={0} max={1} step={0.05} disabled={locked} note="Lower (0.30–0.50): emotional, dynamic. Higher (0.60–0.85): consistent, may sound monotonous."/>
-        <Slider label="Similarity" value={data.voicesimilarity??0.75} onChange={v=>onChange('voicesimilarity',v)} min={0} max={1} step={0.05} disabled={locked} note="Higher boosts clarity and consistency. Very high values may cause audio distortions."/>
+        <Slider label="Speed" value={data.voicespeed??1.0} onChange={v=>onChange('voicespeed',v)} min={0.5} max={2.0} step={0.05} disabled={locked} note="Most natural: 0.9–1.1×."/>
+        <Slider label="Stability" value={data.voicestabilityscore??0.5} onChange={v=>onChange('voicestabilityscore',v)} min={0} max={1} step={0.05} disabled={locked} note="Lower (0.30–0.50): emotional, dynamic. Higher (0.60–0.85): consistent."/>
+        <Slider label="Similarity" value={data.voicesimilarity??0.75} onChange={v=>onChange('voicesimilarity',v)} min={0} max={1} step={0.05} disabled={locked} note="Higher boosts clarity. Very high values may cause distortions."/>
         <Slider label="Style Exaggeration" value={data.voicestyle??0.0} onChange={v=>onChange('voicestyle',v)} min={0} max={1} step={0.05} disabled={locked} note="Amplifies voice style. Increases latency when above 0."/>
       </div></Sec>
 
-      {/* Characteristics */}
       <Sec title="Voice Characteristics" open={true}><div style={{paddingTop:'10px'}}>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'12px'}}>
           <div><div style={lbl}>Age</div><input value={data.voiceage||''} onChange={e=>!locked&&onChange('voiceage',e.target.value)} disabled={locked} style={mkI(locked)} placeholder="e.g. late 20s, mid 50s"/></div>
           <div><div style={lbl}>Gender</div><select value={data.voicegender||''} onChange={e=>!locked&&onChange('voicegender',e.target.value)} disabled={locked} style={mkS(locked)}><option value="">— Select —</option>{['Male','Female','Neutral'].map(o=><option key={o}>{o}</option>)}</select></div>
-          <div><div style={lbl}>Accent</div><select value={data.voiceaccent||''} onChange={e=>!locked&&onChange('voiceaccent',e.target.value)} disabled={locked} style={mkS(locked)}><option value="">-- Select --</option>{(accentOpts||[]).map(a=><option key={a.nvvalue} value={a.nvvalue}>{a.nvname}</option>)}</select></div>
+          <div><div style={lbl}>Accent</div><select value={data.voiceaccent||''} onChange={e=>!locked&&onChange('voiceaccent',e.target.value)} disabled={locked} style={mkS(locked)}><option value="">— Select —</option>{(accentOpts||[]).map(a=><option key={a.nvvalue} value={a.nvvalue}>{a.nvname}</option>)}</select></div>
           <div><div style={lbl}>Tone / Timbre</div><input value={data.voicetone||''} onChange={e=>!locked&&onChange('voicetone',e.target.value)} disabled={locked} style={mkI(locked)} placeholder="e.g. Gravelly, breathy, crisp"/></div>
           <div><div style={lbl}>Pacing</div><input value={data.voicepacing||''} onChange={e=>!locked&&onChange('voicepacing',e.target.value)} disabled={locked} style={mkI(locked)} placeholder="e.g. Slow and deliberate"/></div>
           <div><div style={lbl}>Emotional Range</div><select value={data.voiceemotionalrange||''} onChange={e=>!locked&&onChange('voiceemotionalrange',e.target.value)} disabled={locked} style={mkS(locked)}><option value="">— Select —</option>{['Wide','Neutral','Narrow'].map(o=><option key={o}>{o}</option>)}</select></div>
@@ -323,7 +296,6 @@ function VoiceTab({data,onChange,locked,assetMeta,onVoiceIdChange,savedAssetId})
         <div><div style={lbl}>Script / Voice Notes</div><textarea value={data.script||''} onChange={e=>!locked&&onChange('script',e.target.value)} disabled={locked} style={mkT(locked)} placeholder="Dialog, personality cues, scene context..."/></div>
       </div></Sec>
 
-      {/* Voice Prompt */}
       <div style={{marginTop:'20px',marginBottom:'16px'}}>
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'8px'}}>
           <div style={lbl}>Voice Prompt</div>
@@ -336,18 +308,15 @@ function VoiceTab({data,onChange,locked,assetMeta,onVoiceIdChange,savedAssetId})
           </div>
         </div>
         <textarea value={data.voiceprompt||''} onChange={e=>!locked&&onChange('voiceprompt',e.target.value.slice(0,1000))} disabled={locked}
-          style={{...mkT(locked),minHeight:'100px',borderColor:voicePromptLen>1000?RED:BORDER}} placeholder="ElevenLabs voice design prompt — 1000 char max..."/>
-        {voicePromptLen>1000&&<div style={{fontSize:'0.62rem',color:RED,marginTop:'3px'}}>Exceeds 1000 character limit — will be truncated on generate.</div>}
+          style={{...mkT(locked),minHeight:'100px'}} placeholder="ElevenLabs voice design prompt — 1000 char max..."/>
       </div>
 
-      {/* Preview Text */}
       <div style={{marginBottom:'16px'}}>
         <div style={lbl}>Preview Text</div>
         <textarea value={previewText} onChange={e=>setPreviewText(e.target.value)} disabled={locked} style={{...mkT(locked),minHeight:'56px'}}/>
-        <div style={{fontSize:'0.62rem',color:previewText.length>=100?GREEN:GOLD,marginTop:'3px'}}>{previewText.length}/100 min characters {previewText.length>=100?'✓':'— needs more text'}</div>
+        <div style={{fontSize:'0.62rem',color:previewText.length>=100?GREEN:GOLD,marginTop:'3px'}}>{previewText.length}/100 min {previewText.length>=100?'✓':'— needs more text'}</div>
       </div>
 
-      {/* Generate Controls */}
       <div style={{display:'flex',alignItems:'flex-end',gap:'12px',marginBottom:'16px'}}>
         <Sp label="# Previews" value={numPrev} onChange={setNumPrev} min={1} max={3} disabled={locked}/>
         <button onClick={doGeneratePreviews} disabled={generating||locked||!data.voiceprompt?.trim()}
@@ -358,7 +327,6 @@ function VoiceTab({data,onChange,locked,assetMeta,onVoiceIdChange,savedAssetId})
 
       {error&&<div style={{padding:'8px 12px',background:'rgba(200,75,49,0.1)',border:`1px solid rgba(200,75,49,0.25)`,color:RED,fontSize:'0.75rem',marginBottom:'14px'}}>⚠ {error}</div>}
 
-      {/* Drafts */}
       {drafts.length>0&&(
         <div>
           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'10px'}}>
@@ -394,13 +362,11 @@ function ImageTab({data,onChange,locked,assetMeta}){
   function f(k){return{value:data[k]??'',onChange:e=>!locked&&onChange(k,e.target.value),disabled:locked}}
   function set(k,v){!locked&&onChange(k,v)}
 
-  // Image drafts — persist via instance.imagedrafts JSONB
-  const storedDrafts=data.imagedrafts ? (typeof data.imagedrafts==='string'?JSON.parse(data.imagedrafts):data.imagedrafts) : []
+  const storedDrafts=data.imagedrafts?(typeof data.imagedrafts==='string'?JSON.parse(data.imagedrafts):data.imagedrafts):[]
   const finalIdx=storedDrafts.findIndex(d=>d.isFinal)
   const [genImg,setGenImg]=useState(false),[imgErr,setImgErr]=useState('')
   const [numVariations,setNumVariations]=useState(3)
-
-  function setDrafts(newDrafts){onChange('imagedrafts',JSON.stringify(newDrafts))}
+  function setDrafts(nd){onChange('imagedrafts',JSON.stringify(nd))}
 
   async function buildPrompt(){
     const p=[]
@@ -411,7 +377,6 @@ function ImageTab({data,onChange,locked,assetMeta}){
       if(isChar&&data.ethnicity)p.push(data.ethnicity)
       if(isChar&&data.skintone)p.push(data.skintone+' skin')
       if(data.heightft)p.push(`${data.heightft}ft ${data.heightin??0}in`)
-      if(data.weightlbs)p.push(`${data.weightlbs}lbs`)
       if(isChar&&data.bodyshape)p.push(data.bodyshape+' build')
       if(data.haircolor)p.push(`${data.haircolor} ${data.hairlength||''} hair`.trim())
       if(data.eyecolor)p.push(data.eyecolor+' eyes')
@@ -437,8 +402,8 @@ function ImageTab({data,onChange,locked,assetMeta}){
       const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${mid}:predict?key=${k}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({instances:[{prompt:data.prompt}],parameters:{sampleCount:numVariations,aspectRatio:data.promptaspectratio||'16:9',safetyFilterLevel:'block_some'}})})
       if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e?.error?.message||`API ${r.status}`)}
       const j=await r.json()
-      const newDrafts=(j.predictions||[]).map((p,i)=>({id:Date.now()+i,num:storedDrafts.length+i+1,dataUrl:`data:${p.mimeType||'image/png'};base64,${p.bytesBase64Encoded}`,isFinal:false}))
-      setDrafts([...storedDrafts,...newDrafts])
+      const nd=(j.predictions||[]).map((p,i)=>({id:Date.now()+i,num:storedDrafts.length+i+1,dataUrl:`data:${p.mimeType||'image/png'};base64,${p.bytesBase64Encoded}`,isFinal:false}))
+      setDrafts([...storedDrafts,...nd])
     }catch(e){setImgErr(e.message)}
     setGenImg(false)
   }
@@ -453,7 +418,7 @@ function ImageTab({data,onChange,locked,assetMeta}){
     <div style={{padding:'24px 28px 60px'}}>
       <Sec title="Identity" open={true}><div style={{paddingTop:'8px'}}>
         <div style={{marginBottom:'12px'}}><div style={lbl}>Description</div><textarea {...f('description')} style={mkT(locked)} placeholder="Narrative description..."/></div>
-        <div style={{marginBottom:'12px'}}><div style={lbl}>Style Consistency Anchor</div><textarea {...f('styleconsistencyanchor')} style={{...mkT(locked),minHeight:'52px'}} placeholder="Phrase prepended to every prompt for visual consistency across all generations..."/></div>
+        <div style={{marginBottom:'12px'}}><div style={lbl}>Style Consistency Anchor</div><textarea {...f('styleconsistencyanchor')} style={{...mkT(locked),minHeight:'52px'}} placeholder="Phrase prepended to every prompt for visual consistency..."/></div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px'}}>
           <div><div style={lbl}>Aspect Ratio</div><select {...f('promptaspectratio')} style={mkS(locked)}><option value="">— Select —</option><option value="3:4">3:4 Portrait</option><option value="9:16">9:16 Vertical</option><option value="1:1">1:1 Square</option><option value="16:9">16:9 Wide</option></select></div>
           <div><div style={lbl}>Negative Prompt</div><input {...f('negativeprompt')} style={mkI(locked)} placeholder="e.g. cartoon, blur, text"/></div>
@@ -479,11 +444,9 @@ function ImageTab({data,onChange,locked,assetMeta}){
         {[['Scars','scars'],['Tattoos','tattoos'],['Piercings','piercings'],['Disabilities','disabilities'],['Disfigurements','disfigurements']].map(([l,k])=>(<div key={k} style={{marginBottom:'8px'}}><div style={lbl}>{l}</div><textarea {...f(k)} style={{...mkT(locked),minHeight:'48px'}} placeholder={`Describe ${l.toLowerCase()}...`}/></div>))}
       </div></Sec>}
 
-      {hasExt&&<Sec title="Exterior Attributes" open={isAnimObj}><div style={{paddingTop:'8px',display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'12px'}}>{[['Material','extmaterial'],['Color','extcolor'],['Texture','exttexture']].map(([l,k])=>(<div key={k}><div style={lbl}>{l}</div><input {...f(k)} style={mkI(locked)}/></div>))}</div></Sec>}
-
       {isPerson&&<Sec title="Personality"><div style={{paddingTop:'8px'}}>{[['Intelligence','intelligence'],['Humor','humor'],['Wisdom','wisdom'],['Charisma','charisma']].map(([l,k])=>(<Stars key={k} label={l} value={data[k]??3} onChange={v=>set(k,v)} disabled={locked}/>))}</div></Sec>}
-
       {isPerson&&<Sec title="Clothing"><div style={{paddingTop:'8px'}}><textarea {...f('clothingdescription')} style={mkT(locked)} placeholder="Describe clothing..."/></div></Sec>}
+      {hasExt&&<Sec title="Exterior Attributes" open={isAnimObj}><div style={{paddingTop:'8px',display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'12px'}}>{[['Material','extmaterial'],['Color','extcolor'],['Texture','exttexture']].map(([l,k])=>(<div key={k}><div style={lbl}>{l}</div><input {...f(k)} style={mkI(locked)}/></div>))}</div></Sec>}
 
       {isSet&&<Sec title="Set / Environment" open={true}><div style={{paddingTop:'8px'}}>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'12px'}}>{[['Time Period','timeperiod'],['Material','extmaterial'],['Color','extcolor'],['Texture','exttexture']].map(([l,k])=>(<div key={k}><div style={lbl}>{l}</div><input {...f(k)} style={mkI(locked)}/></div>))}</div>
@@ -496,18 +459,14 @@ function ImageTab({data,onChange,locked,assetMeta}){
         <div style={{marginBottom:'10px'}}><div style={lbl}>Reference Image</div><div style={{border:`1px dashed rgba(201,146,74,0.2)`,padding:'14px',textAlign:'center',fontSize:'0.72rem',color:CHARCOAL,cursor:locked?'default':'pointer',opacity:locked?0.4:1}}>Click to upload (JPG, PNG, WEBP)</div></div>
       </div></Sec>
 
-      {/* AI Prompt */}
       <Sec title="AI Prompt" open={true}><div style={{paddingTop:'8px'}}>
         <div style={{display:'flex',gap:'10px',marginBottom:'12px',alignItems:'flex-end',flexWrap:'wrap'}}>
           <div style={{flex:1,minWidth:'160px'}}><div style={lbl}>Image AI Model</div><select value={data.aiimagemodel||''} onChange={e=>!locked&&onChange('aiimagemodel',e.target.value)} disabled={locked} style={mkS(locked)}><option value="">— Default (Imagen 4) —</option>{IMG_MODELS.map(m=><option key={m}>{m}</option>)}</select></div>
           <label style={{display:'flex',alignItems:'center',gap:'6px',cursor:locked?'default':'pointer',fontSize:'0.78rem',color:CREAM,whiteSpace:'nowrap',paddingBottom:'2px'}}>
-            <input type="checkbox" checked={!!data.photorealistic} onChange={e=>!locked&&onChange('photorealistic',e.target.checked)} disabled={locked} style={{accentColor:GOLD,width:'14px',height:'14px'}}/>
-            Photorealistic
+            <input type="checkbox" checked={!!data.photorealistic} onChange={e=>!locked&&onChange('photorealistic',e.target.checked)} disabled={locked} style={{accentColor:GOLD,width:'14px',height:'14px'}}/>Photorealistic
           </label>
           <button onClick={buildPrompt} disabled={locked} style={{background:'rgba(201,146,74,0.1)',border:`1px solid rgba(201,146,74,0.25)`,color:locked?MUTED:GOLD,padding:'9px 14px',cursor:locked?'default':'pointer',fontFamily:'DM Sans, sans-serif',fontSize:'0.68rem',letterSpacing:'0.08em',textTransform:'uppercase',whiteSpace:'nowrap'}}>Build Prompt</button>
         </div>
-
-        {/* AI Generated Prompt (read-only, from Generate Assets) */}
         {data.aigeneratedprompt&&(
           <div style={{marginBottom:'12px'}}>
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'5px'}}>
@@ -520,11 +479,9 @@ function ImageTab({data,onChange,locked,assetMeta}){
             <textarea readOnly value={data.aigeneratedprompt||''} style={{...mkT(true),minHeight:'64px',fontFamily:'monospace',fontSize:'0.72rem',opacity:0.5,cursor:'default'}}/>
           </div>
         )}
-
-        <div style={{marginBottom:'4px'}}><div style={lbl}>Prompt</div><textarea {...f('prompt')} style={{...mkT(locked),minHeight:'100px',fontFamily:'monospace',fontSize:'0.75rem'}}/></div>
+        <div><div style={lbl}>Prompt</div><textarea {...f('prompt')} style={{...mkT(locked),minHeight:'100px',fontFamily:'monospace',fontSize:'0.75rem'}}/></div>
       </div></Sec>
 
-      {/* Image Generation */}
       <Sec title="Image Generation" open={true}><div style={{paddingTop:'8px'}}>
         <div style={{display:'flex',alignItems:'flex-end',gap:'12px',marginBottom:'14px',flexWrap:'wrap'}}>
           <Sp label="# Variations" value={numVariations} onChange={setNumVariations} min={1} max={4} disabled={locked}/>
@@ -536,7 +493,7 @@ function ImageTab({data,onChange,locked,assetMeta}){
         {imgErr&&<div style={{padding:'7px 10px',background:'rgba(200,75,49,0.1)',border:`1px solid rgba(200,75,49,0.25)`,color:RED,fontSize:'0.75rem',marginBottom:'10px'}}>⚠ {imgErr}</div>}
         {storedDrafts.length>0&&(
           <div>
-            <div style={{fontSize:'0.68rem',color:CHARCOAL,letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:'10px'}}>{storedDrafts.length} versions — {finalIdx>=0?`#${finalIdx+1} is Final`:'none selected as Final'}</div>
+            <div style={{fontSize:'0.68rem',color:CHARCOAL,letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:'10px'}}>{storedDrafts.length} versions — {finalIdx>=0?`#${finalIdx+1} is Final`:'none selected'}</div>
             <div style={{display:'grid',gridTemplateColumns:`repeat(${Math.min(storedDrafts.length,3)},1fr)`,gap:'8px'}}>
               {storedDrafts.map((d,i)=>(
                 <div key={d.id||i}>
@@ -565,15 +522,11 @@ export default function AssetDetail(){
   const navigate=useNavigate()
   const {endUser}=useAuth()
   const isNew=!assetId||assetId==='new'
-  const [assetMeta,setAssetMeta]=useState({name:'',assettype:'Person',domain:'User Domain',aigenerated:false,royaltyeligible:false,locked:false,elevenlabs_voice_id:''})
-  const [instances,setInstances]=useState([{_tempId:1,...BLANK}])
-  const [activeKey,setActiveKey]=useState(1)
+  const [asset,setAsset]=useState({name:'',assettype:'Person',domain:'User Domain',aigenerated:false,royaltyeligible:false,locked:false,elevenlabs_voice_id:'',...BLANK})
   const [activeTab,setActiveTab]=useState('image')
   const [saving,setSaving]=useState(false)
   const [loading,setLoading]=useState(!isNew)
   const [toast,setToast]=useState('')
-  const [addingInst,setAddingInst]=useState(false)
-  const [newInstName,setNewInstName]=useState('')
   const [savedAssetId,setSavedAssetId]=useState(isNew?null:parseInt(assetId))
 
   useEffect(()=>{
@@ -581,35 +534,59 @@ export default function AssetDetail(){
     async function load(){
       setLoading(true)
       const {data:a}=await supabase.from('assets').select('*').eq('assetid',parseInt(assetId)).single()
-      const {data:insts}=await supabase.from('assetinstances').select('*').eq('assetid',parseInt(assetId)).eq('activestatus','A').order('instanceid')
-      if(a)setAssetMeta({name:a.name,assettype:a.assettype,domain:a.domain||'User Domain',aigenerated:!!a.aigenerated,royaltyeligible:!!a.royaltyeligible,locked:!!a.locked,elevenlabs_voice_id:a.elevenlabs_voice_id||''})
-      if(insts?.length){setInstances(insts);setActiveKey(insts[0].instanceid)}
+      if(a)setAsset({...BLANK,...a})
       setLoading(false)
     }
     load()
   },[assetId])
 
-  const locked=assetMeta.locked
-  const activeInst=instances.find(i=>(i.instanceid||i._tempId)===activeKey)||instances[0]
-  function upd(k,v){setInstances(is=>is.map(i=>(i.instanceid||i._tempId)===activeKey?{...i,[k]:v}:i))}
+  const locked=asset.locked
+  function upd(k,v){setAsset(a=>({...a,[k]:v}))}
   function toast_(m){setToast(m);setTimeout(()=>setToast(''),3000)}
 
   async function save(){
-    if(!assetMeta.name.trim()){toast_('Asset name is required');return}
+    if(!asset.name?.trim()){toast_('Asset name is required');return}
     setSaving(true)
     try{
-      let aid=savedAssetId
-      if(isNew||!aid){
-        const {data:a,error:ae}=await supabase.from('assets').insert({name:assetMeta.name,assetname:assetMeta.name,assettype:assetMeta.assettype,domain:assetMeta.domain,aigenerated:assetMeta.aigenerated,royaltyeligible:assetMeta.royaltyeligible,locked:false,elevenlabs_voice_id:assetMeta.elevenlabs_voice_id||null,activestatus:'A',createdate:new Date().toISOString(),updatedate:new Date().toISOString(),createdby:endUser?.enduserid}).select().single()
-        if(ae)throw ae;aid=a.assetid;setSavedAssetId(aid)
-      }else{
-        await supabase.from('assets').update({name:assetMeta.name,assetname:assetMeta.name,assettype:assetMeta.assettype,domain:assetMeta.domain,aigenerated:assetMeta.aigenerated,royaltyeligible:assetMeta.royaltyeligible,elevenlabs_voice_id:assetMeta.elevenlabs_voice_id||null,updatedate:new Date().toISOString(),updatedby:endUser?.enduserid}).eq('assetid',aid)
+      const draftsVal=asset.imagedrafts?(typeof asset.imagedrafts==='string'?asset.imagedrafts:JSON.stringify(asset.imagedrafts)):null
+      const payload={
+        name:asset.name,assetname:asset.name,assettype:asset.assettype,domain:asset.domain,
+        aigenerated:asset.aigenerated,royaltyeligible:asset.royaltyeligible,
+        elevenlabs_voice_id:asset.elevenlabs_voice_id||null,
+        updatedate:new Date().toISOString(),updatedby:endUser?.enduserid,
+        description:asset.description||null,characterimportance:asset.characterimportance||null,
+        speakingrole:!!asset.speakingrole,sex:asset.sex||null,
+        heightft:asset.heightft||null,heightin:asset.heightin||null,weightlbs:asset.weightlbs||null,
+        bodyshape:asset.bodyshape||null,skintone:asset.skintone||null,ethnicity:asset.ethnicity||null,
+        haircolor:asset.haircolor||null,hairlength:asset.hairlength||null,eyecolor:asset.eyecolor||null,
+        scars:asset.scars||null,tattoos:asset.tattoos||null,piercings:asset.piercings||null,
+        disabilities:asset.disabilities||null,disfigurements:asset.disfigurements||null,
+        extmaterial:asset.extmaterial||null,extcolor:asset.extcolor||null,exttexture:asset.exttexture||null,
+        intelligence:asset.intelligence||3,humor:asset.humor||3,wisdom:asset.wisdom||3,charisma:asset.charisma||3,
+        clothingdescription:asset.clothingdescription||null,timeperiod:asset.timeperiod||null,
+        setwidthft:asset.setwidthft||null,setlengthft:asset.setlengthft||null,setheightft:asset.setheightft||null,
+        dominantcolor:asset.dominantcolor||null,secondarycolor:asset.secondarycolor||null,accentcolor:asset.accentcolor||null,
+        bgimagedesc:asset.bgimagedesc||null,bgaudiodesc:asset.bgaudiodesc||null,
+        prompt:asset.prompt||null,script:asset.script||null,finalimage:asset.finalimage||null,
+        promptaspectratio:asset.promptaspectratio||null,negativeprompt:asset.negativeprompt||null,
+        styleconsistencyanchor:asset.styleconsistencyanchor||null,
+        aiimagemodel:asset.aiimagemodel||null,aigeneratedprompt:asset.aigeneratedprompt||null,
+        photorealistic:asset.photorealistic??true,imagedrafts:draftsVal,
+        soundaimodel:asset.soundaimodel||null,
+        voiceage:asset.voiceage||null,voicegender:asset.voicegender||null,voiceaccent:asset.voiceaccent||null,
+        voicetone:asset.voicetone||null,voicepacing:asset.voicepacing||null,
+        voiceemotionalrange:asset.voiceemotionalrange||null,voicequalitytag:asset.voicequalitytag||null,
+        voiceprompt:asset.voiceprompt||null,
+        voicespeed:asset.voicespeed??null,voicestabilityscore:asset.voicestabilityscore??null,
+        voicesimilarity:asset.voicesimilarity??null,voicestyle:asset.voicestyle??null,
       }
-      for(const inst of instances){
-        const draftsVal=inst.imagedrafts?(typeof inst.imagedrafts==='string'?inst.imagedrafts:JSON.stringify(inst.imagedrafts)):null
-        const p={assetid:aid,instancename:inst.instancename||'Main',description:inst.description||null,characterimportance:inst.characterimportance||null,speakingrole:!!inst.speakingrole,sex:inst.sex||null,heightft:inst.heightft||null,heightin:inst.heightin||null,weightlbs:inst.weightlbs||null,bodyshape:inst.bodyshape||null,skintone:inst.skintone||null,ethnicity:inst.ethnicity||null,haircolor:inst.haircolor||null,hairlength:inst.hairlength||null,eyecolor:inst.eyecolor||null,scars:inst.scars||null,tattoos:inst.tattoos||null,piercings:inst.piercings||null,disabilities:inst.disabilities||null,disfigurements:inst.disfigurements||null,extmaterial:inst.extmaterial||null,extcolor:inst.extcolor||null,exttexture:inst.exttexture||null,intelligence:inst.intelligence||3,humor:inst.humor||3,wisdom:inst.wisdom||3,charisma:inst.charisma||3,clothingdescription:inst.clothingdescription||null,timeperiod:inst.timeperiod||null,setwidthft:inst.setwidthft||null,setlengthft:inst.setlengthft||null,setheightft:inst.setheightft||null,dominantcolor:inst.dominantcolor||null,secondarycolor:inst.secondarycolor||null,accentcolor:inst.accentcolor||null,bgimagedesc:inst.bgimagedesc||null,bgaudiodesc:inst.bgaudiodesc||null,prompt:inst.prompt||null,script:inst.script||null,finalimage:inst.finalimage||null,promptaspectratio:inst.promptaspectratio||null,negativeprompt:inst.negativeprompt||null,styleconsistencyanchor:inst.styleconsistencyanchor||null,aiimagemodel:inst.aiimagemodel||null,aigeneratedprompt:inst.aigeneratedprompt||null,photorealistic:inst.photorealistic??true,imagedrafts:draftsVal,soundaimodel:inst.soundaimodel||null,voiceage:inst.voiceage||null,voicegender:inst.voicegender||null,voiceaccent:inst.voiceaccent||null,voicetone:inst.voicetone||null,voicepacing:inst.voicepacing||null,voiceemotionalrange:inst.voiceemotionalrange||null,voicequalitytag:inst.voicequalitytag||null,voiceprompt:inst.voiceprompt||null,voicespeed:inst.voicespeed??null,voicestabilityscore:inst.voicestabilityscore??null,voicesimilarity:inst.voicesimilarity??null,voicestyle:inst.voicestyle??null,activestatus:'A',updatedate:new Date().toISOString()}
-        if(inst.instanceid){await supabase.from('assetinstances').update(p).eq('instanceid',inst.instanceid)}
-        else{await supabase.from('assetinstances').insert({...p,createdate:new Date().toISOString()})}
+      if(isNew||!savedAssetId){
+        const {data:a,error:ae}=await supabase.from('assets').insert({...payload,activestatus:'A',createdate:new Date().toISOString(),createdby:endUser?.enduserid}).select().single()
+        if(ae)throw ae
+        setSavedAssetId(a.assetid)
+      }else{
+        const {error:ue}=await supabase.from('assets').update(payload).eq('assetid',savedAssetId)
+        if(ue)throw ue
       }
       toast_('Saved ✓')
     }catch(e){toast_('Error: '+e.message)}
@@ -618,30 +595,36 @@ export default function AssetDetail(){
 
   async function clone(){
     setSaving(true)
-    const {data:a}=await supabase.from('assets').insert({name:assetMeta.name+' (Copy)',assetname:assetMeta.name+' (Copy)',assettype:assetMeta.assettype,domain:assetMeta.domain,aigenerated:assetMeta.aigenerated,royaltyeligible:assetMeta.royaltyeligible,locked:false,activestatus:'A',createdate:new Date().toISOString(),updatedate:new Date().toISOString(),createdby:endUser?.enduserid}).select().single()
-    if(a){for(const inst of instances){const{instanceid,assetid,createdate,updatedate,...rest}=inst;await supabase.from('assetinstances').insert({...rest,assetid:a.assetid,createdate:new Date().toISOString(),updatedate:new Date().toISOString()})};navigate(`/assets/${a.assetid}`)}
+    try{
+      const {data:a,error:ae}=await supabase.from('assets').insert({
+        ...asset,assetid:undefined,
+        name:asset.name+' (Copy)',assetname:asset.name+' (Copy)',
+        locked:false,activestatus:'A',
+        createdate:new Date().toISOString(),updatedate:new Date().toISOString(),
+        createdby:endUser?.enduserid,updatedby:null
+      }).select().single()
+      if(ae)throw ae
+      navigate(`/assets/${a.assetid}`)
+    }catch(e){toast_('Error: '+e.message)}
     setSaving(false)
   }
 
-  function addInst(){if(!newInstName.trim())return;const ni={_tempId:Date.now(),...BLANK,instancename:newInstName.trim()};setInstances(is=>[...is,ni]);setActiveKey(ni._tempId);setNewInstName('');setAddingInst(false)}
-  async function delInst(inst){if(inst.instancename==='Main')return;if(inst.instanceid)await supabase.from('assetinstances').update({activestatus:'H'}).eq('instanceid',inst.instanceid);const rem=instances.filter(i=>(i.instanceid||i._tempId)!==(inst.instanceid||inst._tempId));setInstances(rem);setActiveKey(rem[0]?.instanceid||rem[0]?._tempId)}
-
   if(loading)return<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'60vh',color:MUTED,fontFamily:'DM Sans, sans-serif'}}>Loading…</div>
 
-  const isSet=assetMeta.assettype==='Set',isProp=assetMeta.assettype==='Prop',showVoice=!isSet&&!isProp
+  const isSet=asset.assettype==='Set',isProp=asset.assettype==='Prop',showVoice=!isSet&&!isProp
+  const assetMeta={...asset,elevenlabs_voice_id:asset.elevenlabs_voice_id||''}
 
   return(
     <div style={{fontFamily:'DM Sans, sans-serif',color:CREAM,background:SURFACE,minHeight:'100vh'}}>
       {toast&&<div style={{position:'fixed',top:'16px',left:'50%',transform:'translateX(-50%)',background:toast.startsWith('Error')?'rgba(200,75,49,0.95)':'rgba(74,156,122,0.95)',color:'#fff',padding:'8px 24px',fontSize:'0.78rem',zIndex:999,borderRadius:'2px',pointerEvents:'none',whiteSpace:'nowrap'}}>{toast}</div>}
 
-      {/* Header */}
       <div style={{background:SURFACE2,borderBottom:`1px solid ${BORDER}`,padding:'0 28px',position:'sticky',top:0,zIndex:20}}>
         <div style={{display:'flex',alignItems:'center',gap:'14px',padding:'14px 0',borderBottom:`1px solid ${BORDER}`}}>
           <button onClick={()=>navigate('/assets')} style={{background:'none',border:'none',color:CHARCOAL,cursor:'pointer',fontSize:'0.72rem',letterSpacing:'0.06em',textTransform:'uppercase',padding:0,flexShrink:0}}>← Assets</button>
           <div style={{width:'1px',height:'18px',background:BORDER}}/>
           {locked
-            ?<div style={{fontFamily:'Cormorant Garamond, serif',fontSize:'1.5rem',fontWeight:300,color:CREAM,flex:1}}>{assetMeta.name}</div>
-            :<input value={assetMeta.name} onChange={e=>setAssetMeta(m=>({...m,name:e.target.value}))} placeholder="Asset name…" style={{fontFamily:'Cormorant Garamond, serif',fontSize:'1.5rem',fontWeight:300,background:'none',border:'none',borderBottom:`1px solid rgba(201,146,74,0.2)`,color:CREAM,outline:'none',flex:1,padding:'2px 0'}}/>
+            ?<div style={{fontFamily:'Cormorant Garamond, serif',fontSize:'1.5rem',fontWeight:300,color:CREAM,flex:1}}>{asset.name}</div>
+            :<input value={asset.name||''} onChange={e=>upd('name',e.target.value)} placeholder="Asset name…" style={{fontFamily:'Cormorant Garamond, serif',fontSize:'1.5rem',fontWeight:300,background:'none',border:'none',borderBottom:`1px solid rgba(201,146,74,0.2)`,color:CREAM,outline:'none',flex:1,padding:'2px 0'}}/>
           }
           {locked&&<span style={{background:'rgba(200,75,49,0.15)',color:RED,fontSize:'0.6rem',padding:'2px 8px',letterSpacing:'0.08em',textTransform:'uppercase',flexShrink:0}}>🔒 Locked</span>}
           <div style={{display:'flex',gap:'8px',flexShrink:0}}>
@@ -650,40 +633,40 @@ export default function AssetDetail(){
           </div>
         </div>
         <div style={{display:'flex',alignItems:'center',gap:'16px',padding:'10px 0',borderBottom:`1px solid ${BORDER}`,flexWrap:'wrap'}}>
-          <select value={assetMeta.assettype} onChange={e=>!locked&&setAssetMeta(m=>({...m,assettype:e.target.value}))} disabled={locked} style={{background:SURFACE,border:`1px solid ${BORDER}`,color:CREAM,fontFamily:'DM Sans, sans-serif',fontSize:'0.78rem',padding:'5px 10px',cursor:locked?'default':'pointer',outline:'none'}}>
+          <select value={asset.assettype||'Person'} onChange={e=>!locked&&upd('assettype',e.target.value)} disabled={locked} style={{background:SURFACE,border:`1px solid ${BORDER}`,color:CREAM,fontFamily:'DM Sans, sans-serif',fontSize:'0.78rem',padding:'5px 10px',cursor:locked?'default':'pointer',outline:'none'}}>
             {ASSET_TYPES.map(t=><option key={t}>{t}</option>)}
+          </select>
+          <select value={asset.domain||'User Domain'} onChange={e=>!locked&&upd('domain',e.target.value)} disabled={locked} style={{background:SURFACE,border:`1px solid ${BORDER}`,color:CHARCOAL,fontFamily:'DM Sans, sans-serif',fontSize:'0.78rem',padding:'5px 10px',cursor:locked?'default':'pointer',outline:'none'}}>
+            {['Public Domain','Culmina Original','User Domain','Title Domain'].map(d=><option key={d}>{d}</option>)}
           </select>
           <div style={{display:'flex',gap:'14px',alignItems:'center'}}>
             {['Speaking Role','Non-speaking'].map((l,i)=>(
-              <label key={l} style={{display:'flex',alignItems:'center',gap:'6px',cursor:locked?'default':'pointer',fontSize:'0.78rem',color:!!activeInst?.speakingrole===(i===0)?GOLD:CHARCOAL}}>
-                <input type="radio" name="sr" checked={!!activeInst?.speakingrole===(i===0)} onChange={()=>!locked&&upd('speakingrole',i===0)} style={{accentColor:GOLD}}/>{l}
+              <label key={l} style={{display:'flex',alignItems:'center',gap:'6px',cursor:locked?'default':'pointer',fontSize:'0.78rem',color:!!asset.speakingrole===(i===0)?GOLD:CHARCOAL}}>
+                <input type="radio" name="sr" checked={!!asset.speakingrole===(i===0)} onChange={()=>!locked&&upd('speakingrole',i===0)} style={{accentColor:GOLD}}/>{l}
               </label>
             ))}
           </div>
           <div style={{display:'flex',gap:'20px',marginLeft:'auto'}}>
-            <Toggle label="AI Generated" value={assetMeta.aigenerated} onChange={v=>!locked&&setAssetMeta(m=>({...m,aigenerated:v}))} disabled={locked}/>
-            <Toggle label="Royalty Eligible" value={assetMeta.royaltyeligible} onChange={v=>!locked&&setAssetMeta(m=>({...m,royaltyeligible:v}))} disabled={locked}/>
+            <Toggle label="AI Generated" value={!!asset.aigenerated} onChange={v=>!locked&&upd('aigenerated',v)} disabled={locked}/>
+            <Toggle label="Royalty Eligible" value={!!asset.royaltyeligible} onChange={v=>!locked&&upd('royaltyeligible',v)} disabled={locked}/>
           </div>
-        </div>
-        <div style={{display:'flex',alignItems:'center',overflowX:'auto'}}>
-          {instances.map(inst=>{const k=inst.instanceid||inst._tempId;return(<div key={k} style={{display:'flex',alignItems:'center'}}><button onClick={()=>setActiveKey(k)} style={{background:'none',border:'none',borderBottom:activeKey===k?`2px solid ${GOLD}`:'2px solid transparent',color:activeKey===k?GOLD:CHARCOAL,padding:'10px 16px',cursor:'pointer',fontFamily:'DM Sans, sans-serif',fontSize:'0.78rem',whiteSpace:'nowrap',marginBottom:'-1px'}}>{inst.instancename}</button>{inst.instancename!=='Main'&&!locked&&<button onClick={()=>delInst(inst)} style={{background:'none',border:'none',color:CHARCOAL,cursor:'pointer',fontSize:'0.6rem',padding:'0 4px'}}>✕</button>}</div>)})}
-          {!addingInst?<button onClick={()=>setAddingInst(true)} style={{background:'none',border:'none',color:CHARCOAL,padding:'10px 12px',cursor:'pointer',fontSize:'0.75rem',whiteSpace:'nowrap'}}>+ Instance</button>
-            :<div style={{display:'flex',alignItems:'center',gap:'6px',padding:'6px 8px'}}><input value={newInstName} onChange={e=>setNewInstName(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addInst()} autoFocus placeholder="Instance name" style={{background:SURFACE,border:`1px solid ${BORDER}`,color:CREAM,padding:'4px 8px',fontFamily:'DM Sans, sans-serif',fontSize:'0.75rem',outline:'none',width:'120px'}}/><button onClick={addInst} style={{background:GOLD,border:'none',color:SURFACE,padding:'4px 10px',cursor:'pointer',fontSize:'0.7rem',fontFamily:'DM Sans, sans-serif'}}>Add</button><button onClick={()=>{setAddingInst(false);setNewInstName('')}} style={{background:'none',border:'none',color:CHARCOAL,cursor:'pointer'}}>✕</button></div>}
         </div>
       </div>
 
-      {/* Tab bar */}
       <div style={{background:SURFACE2,borderBottom:`1px solid ${BORDER}`,padding:'0 28px',display:'flex'}}>
         {[{id:'image',label:'Image'},...(showVoice?[{id:'voice',label:'Voice & Sound'}]:[])].map(tab=>(
           <button key={tab.id} onClick={()=>setActiveTab(tab.id)} style={{background:'none',border:'none',borderBottom:activeTab===tab.id?`2px solid ${GOLD}`:'2px solid transparent',color:activeTab===tab.id?GOLD:CHARCOAL,padding:'12px 20px',cursor:'pointer',fontFamily:'DM Sans, sans-serif',fontSize:'0.78rem',letterSpacing:'0.06em',textTransform:'uppercase',marginBottom:'-1px'}}>{tab.label}</button>
         ))}
       </div>
 
-      {activeInst&&activeTab==='image'&&<ImageTab data={activeInst} onChange={upd} locked={locked} assetMeta={assetMeta}/>}
-      {activeInst&&activeTab==='voice'&&showVoice&&<VoiceTab data={activeInst} onChange={upd} locked={locked} assetMeta={assetMeta} savedAssetId={savedAssetId}
+      {activeTab==='image'&&<ImageTab data={asset} onChange={upd} locked={locked} assetMeta={assetMeta}/>}
+      {activeTab==='voice'&&showVoice&&<VoiceTab data={asset} onChange={upd} locked={locked} assetMeta={assetMeta} savedAssetId={savedAssetId}
         onVoiceIdChange={async(id)=>{
-          setAssetMeta(m=>({...m,elevenlabs_voice_id:id}))
-          if(savedAssetId){await supabase.from('assets').update({elevenlabs_voice_id:id,updatedate:new Date().toISOString()}).eq('assetid',savedAssetId);toast_('Voice ID saved ✓')}
+          upd('elevenlabs_voice_id',id)
+          if(savedAssetId){
+            await supabase.from('assets').update({elevenlabs_voice_id:id,updatedate:new Date().toISOString()}).eq('assetid',savedAssetId)
+            toast_('Voice ID saved ✓')
+          }
         }}/>}
     </div>
   )

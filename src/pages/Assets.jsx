@@ -1183,7 +1183,7 @@ const [viewMode,     setViewMode]     = useState('grid')
 
   async function loadAssets() {
     setLoading(true)
-    const { data } = await supabase.from('assets').select('*, assetinstances(instanceid,instancename,finalimage)').eq('activestatus','A').order('name')
+    const { data } = await supabase.from('assets').select('*').eq('activestatus','A').order('name')
     if(data) setAssets(data)
     setLoading(false)
   }
@@ -1261,20 +1261,20 @@ const [viewMode,     setViewMode]     = useState('grid')
           {filtered.map(asset=>{
             const tc=TYPE_COLORS[asset.assettype]||TYPE_COLORS.Other
             const dc=DOMAIN_COLORS[asset.domain]||DOMAIN_COLORS['User Domain']
-            const instCount=asset.assetinstances?.length||0
+            const instCount=0
             return (
               <div key={asset.assetid} style={{ background:SURFACE2, border:`1px solid ${BORDER}`, cursor:'pointer', overflow:'hidden', transition:'border-color 0.2s' }}
                 onMouseEnter={e=>e.currentTarget.style.borderColor='rgba(201,146,74,0.35)'}
                 onMouseLeave={e=>e.currentTarget.style.borderColor=BORDER}
                 onClick={()=>openEdit(asset.assetid)}>
                 <div style={{ aspectRatio:'1', background:'linear-gradient(135deg,#111009 0%,#1a1208 100%)', display:'flex', alignItems:'center', justifyContent:'center', position:'relative', overflow:'hidden' }}>
-                  {asset.assetinstances?.[0]?.finalimage
-                    ? <img src={asset.assetinstances[0].finalimage} alt={asset.name} style={{ width:'100%', height:'100%', objectFit:'cover', display:'block' }} />
+                  {asset.finalimage
+                    ? <img src={asset.finalimage} alt={asset.name} style={{ width:'100%', height:'100%', objectFit:'cover', display:'block' }} />
                     : <div style={{ fontSize:'2.5rem', opacity:0.2 }}>{iconFor(asset.assettype)}</div>
                   }
                   {asset.locked&&<div style={{ position:'absolute', top:'8px', left:'8px', background:'rgba(200,75,49,0.2)', color:RED, fontSize:'0.58rem', padding:'2px 6px' }}>🔒</div>}
                   {asset.aigenerated&&<div style={{ position:'absolute', top:'8px', right:'8px', background:'rgba(201,146,74,0.2)', color:GOLD, fontSize:'0.6rem', padding:'2px 6px' }}>AI</div>}
-                  {instCount>1&&<div style={{ position:'absolute', bottom:'6px', right:'6px', background:'rgba(0,0,0,0.55)', color:CREAM, fontSize:'0.6rem', padding:'2px 7px' }}>{instCount}×</div>}
+                  
                 </div>
                 <div style={{ padding:'12px' }}>
                   <div style={{ fontSize:'0.88rem', color:CREAM, marginBottom:'6px' }}>{asset.name}</div>
@@ -1313,7 +1313,7 @@ const [viewMode,     setViewMode]     = useState('grid')
                     </td>
                     <td style={{ padding:'12px 16px' }}><span style={{ background:tc.bg, color:tc.color, padding:'2px 8px', fontSize:'0.63rem', borderRadius:'2px' }}>{asset.assettype}</span></td>
                     <td style={{ padding:'12px 16px' }}><span style={{ background:dc.bg, color:dc.color, padding:'2px 8px', fontSize:'0.63rem', borderRadius:'2px' }}>{asset.domain}</span></td>
-                    <td style={{ padding:'12px 16px', color:CHARCOAL, fontSize:'0.78rem' }}>{asset.assetinstances?.length||0}</td>
+                    <td style={{ padding:'12px 16px', color:CHARCOAL, fontSize:'0.78rem' }}>—</td>
                     <td style={{ padding:'12px 16px' }}>
                       {asset.locked
                         ? <span style={{ background:'rgba(200,75,49,0.15)', color:RED, padding:'2px 8px', fontSize:'0.62rem' }}>Locked</span>

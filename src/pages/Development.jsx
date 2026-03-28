@@ -436,20 +436,20 @@ function NodeDetailPanel({ node, onSave, onAddChild, allNodes }) {
     if (titleId) {
       const { data: assets } = await supabase
         .from('assets')
-        .select('assetid, assetname, name, assettype, characterimportance, assetinstances(instanceid, instancename)')
+        .select('assetid, assetname, name, assettype, characterimportance')
         .eq('titleproductionid', titleId).eq('activestatus', 'A').order('assetname')
       setAvailAssets(assets || [])
     }
     const { data: nodeAssets } = await supabase
       .from('production_assets')
-      .select('*, assets(assetname, name, assettype), assetinstances(instancename)')
+      .select('*, assets(assetname, name, assettype)')
       .eq('productionid', n.productionid).eq('activestatus', 'A')
     setShotAssets(nodeAssets || [])
 
     if (n.productiongroup === 'SHOT' && n.parentproductionid) {
       const { data: epAssets } = await supabase
         .from('production_assets')
-        .select('*, assets(assetname, name, assettype), assetinstances(instancename)')
+        .select('*, assets(assetname, name, assettype)')
         .eq('productionid', n.parentproductionid).eq('activestatus', 'A')
       setEpisodeAssets(epAssets || [])
     } else {
@@ -508,7 +508,7 @@ function NodeDetailPanel({ node, onSave, onAddChild, allNodes }) {
       // Build asset context from episode/shot assets
       const assetContext = (node.productiongroup === 'SHOT' ? episodeAssets : shotAssets)
         .filter(a => a.included !== false)
-        .map(a => `${a.assets?.assetname || a.assets?.name}${a.assetinstances?.instancename ? ` (${a.assetinstances.instancename})` : ''}`)
+        .map(a => a.assets?.assetname || a.assets?.name || '')
         .join(', ')
 
       const systemPrompt = `You are Culmina AI Drama Studio's prompt engineer for ${resolvedModel} video generation.
@@ -831,7 +831,7 @@ Target model: ${resolvedModel}`
             {filterByTab(episodeAssets).map(ea => {
               const state = getShotState(ea)
               const label = ea.assets?.assetname || ea.assets?.name || 'Unknown'
-              const inst = ea.assetinstances?.instancename
+              const inst = null
               return (
                 <div key={ea.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 0', borderBottom: `1px solid ${C.border}` }}>
                   <div style={{ display: 'flex', gap: '4px' }}>
@@ -849,7 +849,7 @@ Target model: ${resolvedModel}`
                     }}>✕</button>
                   </div>
                   <span style={{ fontSize: '0.75rem', color: state === 'excluded' ? C.muted : C.cream, textDecoration: state === 'excluded' ? 'line-through' : 'none', flex: 1 }}>
-                    {label}{inst ? ` — ${inst}` : ''}
+                    {label}
                   </span>
                   {state === 'inherited' && <span style={{ fontSize: '0.6rem', color: C.muted }}>↑ EP</span>}
                 </div>
@@ -862,7 +862,7 @@ Target model: ${resolvedModel}`
               <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 0', borderBottom: `1px solid ${C.border}` }}>
                 <span style={{ fontSize: '0.72rem', flex: 1, color: C.cream }}>
                   {a.assets?.assetname || a.assets?.name}
-                  {a.assetinstances?.instancename ? ` — ${a.assetinstances.instancename}` : ''}
+                  
                 </span>
                 <button onClick={() => removeAsset(a.id)} style={{ background: 'none', border: 'none', color: C.muted, cursor: 'pointer', fontSize: '0.7rem' }}>✕</button>
               </div>
@@ -877,14 +877,7 @@ Target model: ${resolvedModel}`
                 <option value="">+ Add asset…</option>
                 {filterByTab(availAssets.map(a => ({ assets: a, assetid: a.assetid, instanceid: null }))).map(a => {
                   const asset = a.assets
-                  return [
-                    <option key={`${asset.assetid}:null`} value={`${asset.assetid}:`}>{asset.assetname || asset.name}</option>,
-                    ...(asset.assetinstances || []).map(inst => (
-                      <option key={`${asset.assetid}:${inst.instanceid}`} value={`${asset.assetid}:${inst.instanceid}`}>
-                        {asset.assetname || asset.name} — {inst.instancename}
-                      </option>
-                    ))
-                  ]
+                  return [<option key={asset.assetid} value={`${asset.assetid}:`}>{asset.assetname || asset.name}</option>]
                 })}
               </select>
             </div>
@@ -1063,21 +1056,7 @@ function AssetTree({ titleId, onOpenAsset }) {
       const assets = assetData || []
       setAssets(assets)
 
-      // Fetch all instances for these assets in one query
-      if (assets.length > 0) {
-        const ids = assets.map(a => a.assetid)
-        const { data: instData } = await supabase
-          .from('assetinstances')
-          .select('instanceid, assetid, instancename, activestatus')
-          .in('assetid', ids)
-          .eq('activestatus', 'A')
-          .order('sortorder')
-        const byAsset = {}
-        for (const inst of (instData || [])) {
-          if (!byAsset[inst.assetid]) byAsset[inst.assetid] = []
-          byAsset[inst.assetid].push(inst)
-        }
-        setInstances(byAsset)
+      // Instances removed — assets are flat
       }
       setLoading(false)
     }
@@ -1469,24 +1448,18 @@ async function writeAssetsToDb(titleId, assetsJson) {
     if (assetErr) throw new Error(`Asset insert failed (${asset.assetname}): ${assetErr.message}`)
     const assetId = assetData.assetid
 
-    // Insert instances — populate description with the instance prompt
-    let instSort = 1
-    for (const inst of (asset.instances || [])) {
-      const { error: instErr } = await supabase
-        .from('assetinstances')
-        .insert([{
-          assetid:              assetId,
-          instancename:           inst.instancename,
-          clothingdescription:    inst.clothingdescription || null,
-          prompt:                 inst.prompt || null,
-          description:            inst.prompt || null,
-          aigeneratedprompt:      inst.prompt || null,
-          aigeneratedpromptdate:  inst.prompt ? new Date().toISOString() : null,
-          voiceprompt:            inst.voiceprompt || null,
-          activestatus:           'A',
-          sortorder:              instSort++,
-        }])
-      if (instErr) throw new Error(`Instance insert failed (${inst.instancename}): ${instErr.message}`)
+    // Write first instance fields directly onto the asset row
+    const firstInst = (asset.instances || [])[0]
+    if (firstInst) {
+      await supabase.from('assets').update({
+        prompt:                firstInst.prompt || null,
+        description:           firstInst.prompt || null,
+        aigeneratedprompt:     firstInst.prompt || null,
+        aigeneratedpromptdate: firstInst.prompt ? new Date().toISOString() : null,
+        voiceprompt:           firstInst.voiceprompt || null,
+        clothingdescription:   firstInst.clothingdescription || null,
+        updatedate:            new Date().toISOString(),
+      }).eq('assetid', assetId)
     }
   }
 }
@@ -1496,7 +1469,7 @@ async function writeProductionGuide(titleId, guideJson, existingEpisodes, onProg
   // Load ALL assets for this title once — used for name→id resolution when writing shot assets
   const { data: titleAssets } = await supabase
     .from('assets')
-    .select('assetid, assetname, assetinstances(instanceid, instancename)')
+    .select('assetid, assetname')
     .eq('titleproductionid', titleId)
     .eq('activestatus', 'A')
 
@@ -1615,17 +1588,10 @@ async function writeProductionGuide(titleId, guideJson, existingEpisodes, onProg
         const matched = assetMap[key]
         if (!matched) continue   // AI hallucinated an asset name — skip gracefully
 
-        let instanceId = null
-        if (sa.instancename) {
-          const inst = (matched.assetinstances || []).find(
-            i => i.instancename?.toLowerCase().trim() === sa.instancename.toLowerCase().trim()
-          )
-          if (inst) instanceId = inst.instanceid
-        }
         paRows.push({
           productionid: shotId,
           assetid:      matched.assetid,
-          instanceid:   instanceId,
+          instanceid:   null,
           assetlevel:   'SHOT',
           included:     true,
           activestatus: 'A',
@@ -2107,7 +2073,7 @@ Requirements:
       if (epIds.length > 0) {
         const { data: paData } = await supabase
           .from('production_assets')
-          .select('productionid, assets(assetid, assetname, name, assettype, description), assetinstances(instanceid, instancename, prompt)')
+          .select('productionid, assets(assetid, assetname, name, assettype, description, prompt)')
           .in('productionid', epIds).eq('activestatus', 'A').eq('included', true)
         ;(paData || []).forEach(pa => {
           if (!assetsByEp[pa.productionid]) assetsByEp[pa.productionid] = []
@@ -2120,9 +2086,9 @@ Requirements:
         ? epsInRange.map(ep => {
             const epAssets = assetsByEp[ep.productionid] || []
             const chars = epAssets.filter(pa => ['Person','Animal','AnimateObject'].includes(pa.assets?.assettype))
-              .map(pa => ({ assetname: pa.assets?.assetname || pa.assets?.name, instancename: pa.assetinstances?.instancename, description: pa.assets?.description, prompt: pa.assetinstances?.prompt }))
+              .map(pa => ({ assetname: pa.assets?.assetname || pa.assets?.name, description: pa.assets?.description, prompt: pa.assets?.prompt }))
             const sets  = epAssets.filter(pa => pa.assets?.assettype === 'Set')
-              .map(pa => ({ assetname: pa.assets?.assetname || pa.assets?.name, description: pa.assets?.description, promptsnippet: pa.assetinstances?.prompt }))
+              .map(pa => ({ assetname: pa.assets?.assetname || pa.assets?.name, description: pa.assets?.description, promptsnippet: pa.assets?.prompt }))
             const props = epAssets.filter(pa => pa.assets?.assettype === 'Prop')
               .map(pa => ({ assetname: pa.assets?.assetname || pa.assets?.name }))
             const lightingSnippet = lightingMap[(ep.lighting || '').toLowerCase()] || ep.lighting || ''

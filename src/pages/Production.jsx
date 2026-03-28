@@ -97,7 +97,7 @@ function GenTakesModal({ shot, onClose, onDone }) {
   async function loadAssets() {
     const { data } = await supabase
       .from('production_assets')
-      .select('assetid, instanceid, assets(assetname, assettype), assetinstances(instancename)')
+      .select('assetid, instanceid, assets(assetname, assettype)')
       .eq('productionid', shot.productionid)
       .eq('activestatus', 'A')
       .eq('included', true)
@@ -290,7 +290,7 @@ function GenTakesModal({ shot, onClose, onDone }) {
                 <div style={{ display:'flex', flexWrap:'wrap', gap:'6px' }}>
                   {assets.map((a, i) => (
                     <span key={i} style={{ background:SURFACE2, border:`1px solid ${BORDER}`, color:CHARCOAL, padding:'3px 10px', fontSize:'0.72rem', borderRadius:'2px' }}>
-                      {a.assets?.assetname || '—'}{a.assetinstances?.instancename ? ` · ${a.assetinstances.instancename}` : ''}
+                      {a.assets?.assetname || '—'}
                     </span>
                   ))}
                 </div>
