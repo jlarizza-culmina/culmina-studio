@@ -1057,7 +1057,6 @@ function AssetTree({ titleId, onOpenAsset }) {
       setAssets(assets)
 
       // Instances removed — assets are flat
-      }
       setLoading(false)
     }
     load()
