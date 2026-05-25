@@ -217,6 +217,72 @@ function apiProxy() {
           } catch (err) { res.writeHead(500); res.end(JSON.stringify({ error: err.message })) }
         })
       })
+
+      // /api/wattpad — fetch Wattpad story metadata + chapter text (dev mirror of api/wattpad.js)
+      server.middlewares.use('/api/wattpad', async (req, res) => {
+        if (req.method === 'OPTIONS') { res.writeHead(200); res.end(); return }
+        if (req.method !== 'GET') { res.writeHead(405); res.end(JSON.stringify({ error: 'Method not allowed' })); return }
+
+        const HEADERS = {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'application/json, text/html, */*',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Referer': 'https://www.wattpad.com/',
+        }
+        const json = (status, obj) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)) }
+        const extractStoryId = (u) => { if (!u) return null; const m = String(u).match(/wattpad\.com\/story\/(\d+)/); if (m) return m[1]; if (/^\d+$/.test(u)) return u; return null }
+        const sleep = (ms) => new Promise(r => setTimeout(r, ms))
+        const stripHtml = (html) => {
+          let text = html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '').replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+          text = text.replace(/<\/p>/gi, '\n\n').replace(/<br\s*\/?>/gi, '\n').replace(/<\/div>/gi, '\n')
+          text = text.replace(/<[^>]+>/g, '')
+          text = text.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ').replace(/&#(\d+);/g, (_, c) => String.fromCharCode(parseInt(c, 10)))
+          text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim()
+          return text
+        }
+
+        try {
+          const u       = new URL(req.url, 'http://localhost')
+          const action  = u.searchParams.get('action')
+          const srcUrl  = u.searchParams.get('url')
+          const storyId = u.searchParams.get('storyId')
+          const partId  = u.searchParams.get('partId')
+
+          if (action === 'info') {
+            const id = storyId || extractStoryId(srcUrl)
+            if (!id) return json(400, { error: 'Could not extract story ID from URL' })
+            const fields = ['id','title','description','cover','url','mainCategory','categories','tags','language','numParts','completed','views','votes','user(name)','parts(id,title,length,createDate,url)'].join(',')
+            const response = await fetch(`https://www.wattpad.com/api/v3/stories/${id}?fields=${fields}`, { headers: HEADERS })
+            if (!response.ok) { const t = await response.text(); return json(response.status, { error: `Wattpad API error: ${response.status}`, detail: t.slice(0, 200) }) }
+            return json(200, { story: await response.json() })
+          }
+
+          if (action === 'chapter') {
+            if (!partId) return json(400, { error: 'partId required' })
+            const response = await fetch(`https://www.wattpad.com/apiv2/storytext?id=${partId}`, { headers: HEADERS })
+            if (!response.ok) return json(response.status, { error: `Chapter fetch failed: ${response.status}` })
+            const text = stripHtml(await response.text())
+            return json(200, { partId, text, charCount: text.length })
+          }
+
+          if (action === 'chapters') {
+            const ids = (partId || '').split(',').filter(Boolean).slice(0, 50)
+            if (!ids.length) return json(400, { error: 'partId list required' })
+            const results = []
+            for (const id of ids) {
+              try {
+                const response = await fetch(`https://www.wattpad.com/apiv2/storytext?id=${id.trim()}`, { headers: HEADERS })
+                if (response.ok) results.push({ partId: id.trim(), text: stripHtml(await response.text()), ok: true })
+                else results.push({ partId: id.trim(), text: '', ok: false, status: response.status })
+                await sleep(150)
+              } catch (err) { results.push({ partId: id.trim(), text: '', ok: false, error: err.message }) }
+            }
+            return json(200, { chapters: results })
+          }
+
+          return json(400, { error: 'action must be one of: info, chapter, chapters' })
+        } catch (err) { json(500, { error: err.message }) }
+      })
     },
   }
 }

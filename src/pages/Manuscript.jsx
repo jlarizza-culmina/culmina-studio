@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import * as r2 from '../lib/r2-client'
 import ScoringRunner from '../components/ScoringRunner'
 import ProductionReadinessReport from '../components/ProductionReadinessReport'
+import WattpadImporter from '../components/WattpadImporter'
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
 const GOLD    = '#C9924A'
@@ -736,12 +737,33 @@ function ImportWizard({ onClose, onComplete, userId, nvData, prefill }) {
   const [dragOver, setDragOver] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [sourceTab, setSourceTab] = useState('manual') // manual | wattpad
   const royaltyTypes = nvData?.royalty_type||DEFAULT_ROYALTY_TYPES
   const hasTitle = form.name?.trim().length>0
   const hasAuthor = (form.authors||[]).some(a=>a.name.trim().length>0)
   const canProceed = hasTitle && hasAuthor
 
   function handleFileDrop(e) { e.preventDefault();setDragOver(false);const f=e.dataTransfer?.files[0]||e.target.files[0];if(f){setFile(f);if(!form.name)setForm(fm=>({...fm,name:f.name.replace(/\.[^.]+$/,'')}))} }
+
+  // Map a Wattpad-assembled manuscript into the wizard form, then return to the manual tab for review
+  function handleWattpadReady(ms) {
+    const words = (ms.text||'').split(/\s+/)
+    setForm(f => ({
+      ...f,
+      name: ms.title || f.name,
+      authors: ms.author ? [{ name: ms.author, role: 'Author' }] : f.authors,
+      genre: ms.genre || f.genre,
+      fictionNonfiction: f.fictionNonfiction || 'Fiction',
+      summary: ms.description || f.summary,
+      excerpt: words.slice(0, 3000).join(' '),
+      _fullText: ms.text || f._fullText,
+      sourceUrl: ms.source || f.sourceUrl,
+      chapterCount: ms.chapterCount != null ? String(ms.chapterCount) : f.chapterCount,
+      readCount: ms.views != null ? String(ms.views) : f.readCount,
+      discoverySource: 'Wattpad',
+    }))
+    setSourceTab('manual')
+  }
 
   async function handleCreate() {
     setSaving(true); setError('')
@@ -788,16 +810,30 @@ function ImportWizard({ onClose, onComplete, userId, nvData, prefill }) {
         <div style={{ padding:'24px 28px' }}>
           {step===0&&(
             <div style={{ display:'flex',flexDirection:'column',gap:18 }}>
-              <div onDragOver={e=>{e.preventDefault();setDragOver(true)}} onDragLeave={()=>setDragOver(false)} onDrop={handleFileDrop}
-                style={{ border:`1px dashed ${dragOver?GOLD:BORDER}`,borderRadius:4,padding:'18px',textAlign:'center',cursor:'pointer',background:dragOver?'rgba(201,146,74,0.05)':'transparent' }}
-                onClick={()=>document.getElementById('wiz-file')?.click()}>
-                <input id="wiz-file" type="file" accept=".pdf,.doc,.docx,.txt,.epub" style={{ display:'none' }} onChange={handleFileDrop}/>
-                {file?<div><div style={{ color:GREEN,fontSize:'1rem',marginBottom:3 }}>✓</div><div style={{ color:CREAM,fontSize:'0.8rem' }}>{file.name}</div><div style={{ color:MUTED,fontSize:'0.65rem',marginTop:2 }}>{(file.size/1024/1024).toFixed(1)} MB</div></div>
-                :<div><div style={{ color:CHARCOAL,fontSize:'1.2rem',marginBottom:4 }}>↑</div><div style={{ color:CREAM,fontSize:'0.78rem',marginBottom:2 }}>Drop manuscript or click to browse</div><div style={{ color:MUTED,fontSize:'0.62rem' }}>PDF · DOCX · TXT · EPUB</div></div>}
+              {/* Source tabs */}
+              <div style={{ display:'flex',gap:4,borderBottom:`1px solid ${BORDER}` }}>
+                {[['manual','Manual / Upload'],['wattpad','Wattpad']].map(([key,label])=>(
+                  <button key={key} onClick={()=>setSourceTab(key)}
+                    style={{ background:'none',border:'none',borderBottom:`2px solid ${sourceTab===key?GOLD:'transparent'}`,color:sourceTab===key?CREAM:MUTED,padding:'8px 14px',fontSize:'0.72rem',letterSpacing:'0.06em',textTransform:'uppercase',cursor:'pointer',fontFamily:'DM Sans, sans-serif',fontWeight:sourceTab===key?600:400,marginBottom:-1 }}>{label}</button>
+                ))}
               </div>
-              <ManuscriptForm form={form} setForm={setForm} nvData={nvData} mode="new"/>
-              {!canProceed&&<div style={{ fontSize:'0.65rem',color:RED }}>{!hasTitle?'Title required':'Author required'}</div>}
-              <button onClick={()=>setStep(1)} disabled={!canProceed} style={{ ...btnGold(!canProceed),padding:'12px' }}>Continue →</button>
+
+              {sourceTab==='wattpad'&&(
+                <WattpadImporter onManuscriptReady={handleWattpadReady}/>
+              )}
+
+              {sourceTab==='manual'&&(<>
+                <div onDragOver={e=>{e.preventDefault();setDragOver(true)}} onDragLeave={()=>setDragOver(false)} onDrop={handleFileDrop}
+                  style={{ border:`1px dashed ${dragOver?GOLD:BORDER}`,borderRadius:4,padding:'18px',textAlign:'center',cursor:'pointer',background:dragOver?'rgba(201,146,74,0.05)':'transparent' }}
+                  onClick={()=>document.getElementById('wiz-file')?.click()}>
+                  <input id="wiz-file" type="file" accept=".pdf,.doc,.docx,.txt,.epub" style={{ display:'none' }} onChange={handleFileDrop}/>
+                  {file?<div><div style={{ color:GREEN,fontSize:'1rem',marginBottom:3 }}>✓</div><div style={{ color:CREAM,fontSize:'0.8rem' }}>{file.name}</div><div style={{ color:MUTED,fontSize:'0.65rem',marginTop:2 }}>{(file.size/1024/1024).toFixed(1)} MB</div></div>
+                  :<div><div style={{ color:CHARCOAL,fontSize:'1.2rem',marginBottom:4 }}>↑</div><div style={{ color:CREAM,fontSize:'0.78rem',marginBottom:2 }}>Drop manuscript or click to browse</div><div style={{ color:MUTED,fontSize:'0.62rem' }}>PDF · DOCX · TXT · EPUB</div></div>}
+                </div>
+                <ManuscriptForm form={form} setForm={setForm} nvData={nvData} mode="new"/>
+                {!canProceed&&<div style={{ fontSize:'0.65rem',color:RED }}>{!hasTitle?'Title required':'Author required'}</div>}
+                <button onClick={()=>setStep(1)} disabled={!canProceed} style={{ ...btnGold(!canProceed),padding:'12px' }}>Continue →</button>
+              </>)}
             </div>
           )}
           {step===1&&(
