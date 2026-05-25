@@ -118,6 +118,11 @@ export default function ScoringRunner({ title, onScored }) {
   const [existingUserScore, setExistingUserScore] = useState(null)
 
   useEffect(() => { loadModels(); loadExisting() }, [title.id])
+  // Prefer scoring the full manuscript (e.g. all imported chapters) over the
+  // short excerpt when the full text is available. Only promotes from the default.
+  useEffect(() => {
+    if (title._fullText || title.full_text) setSelectedSource(s => s === 'excerpt' ? 'full_manuscript' : s)
+  }, [title._fullText, title.full_text])
   useEffect(() => {
     if (!selectedModelId) { setDimensions([]); return }
     supabase.from('scoring_dimensions').select('*').eq('modelid', selectedModelId).eq('activestatus', 'A').order('pillar').order('sortorder')

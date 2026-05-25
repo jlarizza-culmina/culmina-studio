@@ -24,6 +24,11 @@ const DEFAULT_AUTHOR_ROLES = ['Author', 'Co-Author', 'Editor', 'Ghostwriter', 'T
 const DEFAULT_FICTION_OPTS  = ['Fiction', 'Non-Fiction']
 const DEFAULT_LANGUAGES    = ['English', 'Spanish', 'French', 'German', 'Portuguese', 'Italian', 'Japanese', 'Korean', 'Chinese', 'Arabic', 'Hindi', 'Russian']
 
+// All manuscripts in this app share one rights model. Ensure it's always an
+// available option (even if not yet in the nvpairs table) and the default.
+const RIGHTS_DEFAULT = 'Wattpad rights'
+const withRights = (list) => (list.includes(RIGHTS_DEFAULT) ? list : [RIGHTS_DEFAULT, ...list])
+
 function slugify(name) { return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') }
 function getVerdict(score) {
   if (score >= 80) return { label: 'Greenlight', color: GREEN, bg: 'rgba(74,156,122,0.15)' }
@@ -300,7 +305,7 @@ async function parseXLSAndImport(file, supabaseClient) {
 // SHARED EDITABLE FORM — used by Detail View and Import Wizard
 // ═══════════════════════════════════════════════════════════════════════════════
 function ManuscriptForm({ form, setForm, nvData, mode, userId, titleSlug, onFileUploaded }) {
-  const royaltyTypes = nvData?.royalty_type || DEFAULT_ROYALTY_TYPES
+  const royaltyTypes = withRights(nvData?.royalty_type || DEFAULT_ROYALTY_TYPES)
   const authorRoles  = nvData?.author_role  || DEFAULT_AUTHOR_ROLES
   const fictionOpts  = nvData?.fiction_nonfiction || DEFAULT_FICTION_OPTS
   const languages    = nvData?.language || DEFAULT_LANGUAGES
@@ -554,7 +559,7 @@ function TitleDetailView({ title, onBack, onDelete, onRefresh, userId, nvData })
   const [deleting, setDeleting] = useState(false)
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState('')
-  const royaltyTypes = nvData?.royalty_type || DEFAULT_ROYALTY_TYPES
+  const royaltyTypes = withRights(nvData?.royalty_type || DEFAULT_ROYALTY_TYPES)
 
   const [form, setForm] = useState({
     name: title.title, version: String(title.version || 1), language: title.language || 'English',
@@ -571,6 +576,16 @@ function TitleDetailView({ title, onBack, onDelete, onRefresh, userId, nvData })
     discoverySource: title.discovery_source || '',
     fee: '', royaltyRate: '', signDate: '', publicDomain: title.royalty_type === 'Royalty-Free',
   })
+
+  // Lazy-load the stored full manuscript text (raw_text) so it's available for
+  // full-manuscript scoring. Kept out of the list query to avoid bloating it.
+  useEffect(() => {
+    let cancelled = false
+    if (!title.id) return
+    supabase.from('productions').select('raw_text').eq('productionid', title.id).single()
+      .then(({ data }) => { if (!cancelled && data?.raw_text) setForm(f => f._fullText ? f : { ...f, _fullText: data.raw_text }) })
+    return () => { cancelled = true }
+  }, [title.id])
 
   const hasScore = title.score != null
   const isComplete = title.status === 'complete' && hasScore
@@ -723,7 +738,7 @@ function ImportWizard({ onClose, onComplete, userId, nvData, prefill }) {
   const [step, setStep] = useState(0)
   const [form, setForm] = useState({
     name: prefill?.name||'', version: '1', language: prefill?.language||'English',
-    sourceUrl: '', royaltyType: prefill?.royaltyType||'',
+    sourceUrl: '', royaltyType: prefill?.royaltyType||RIGHTS_DEFAULT,
     authors: prefill?.authors||[{ name:'',role:'Author' }],
     publisher: prefill?.publisher||'', publisherCity: prefill?.publisherCity||'',
     copyrightYear: prefill?.copyrightYear||'', genre: prefill?.genre||'',
@@ -738,7 +753,7 @@ function ImportWizard({ onClose, onComplete, userId, nvData, prefill }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [sourceTab, setSourceTab] = useState('manual') // manual | wattpad
-  const royaltyTypes = nvData?.royalty_type||DEFAULT_ROYALTY_TYPES
+  const royaltyTypes = withRights(nvData?.royalty_type||DEFAULT_ROYALTY_TYPES)
   const hasTitle = form.name?.trim().length>0
   const hasAuthor = (form.authors||[]).some(a=>a.name.trim().length>0)
   const canProceed = hasTitle && hasAuthor
@@ -780,6 +795,8 @@ function ImportWizard({ onClose, onComplete, userId, nvData, prefill }) {
         excerpt:form.excerpt||null, summary:form.summary||null, generated_extract:form.generatedExtract||null,
         chapter_count:parseInt(form.chapterCount)||null, free_chapter_count:parseInt(form.freeChapterCount)||null,
         read_count:parseInt(form.readCount)||null, imdb_url:form.imdbUrl||null, discovery_source:form.discoverySource||null,
+        raw_text:form._fullText||null,
+        word_count:form._fullText?form._fullText.trim().split(/\s+/).filter(Boolean).length:null,
         createdate:new Date().toISOString(), updatedate:new Date().toISOString(),
       }).select().single()
       if (pe) throw pe
