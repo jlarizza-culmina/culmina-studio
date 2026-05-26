@@ -1709,6 +1709,141 @@ async function writeSeriesBible(titleId, bible) {
 }
 
 // ── Main Component ─────────────────────────────────────────────
+// ── Landing table (toolbar pattern mirrors the Manuscripts data grid) ──────────
+const STATUS_LABELS = { SHOT: 'Shots', EPISODE: 'Episodes', ACT: 'Acts', ARC: 'Arcs', EMPTY: 'Empty' }
+const STATUS_RANK   = { EMPTY: 0, ARC: 1, ACT: 2, EPISODE: 3, SHOT: 4 }
+
+function deriveLevel(arcs, acts, episodes, shots) {
+  if (shots > 0) return 'SHOT'
+  if (episodes > 0) return 'EPISODE'
+  if (acts > 0) return 'ACT'
+  if (arcs > 0) return 'ARC'
+  return 'EMPTY'
+}
+
+function DevelopmentTable({ titles, onOpen }) {
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [sortCol, setSortCol] = useState('created')
+  const [sortDir, setSortDir] = useState('desc')
+
+  const rows = titles.map(t => {
+    const arcs = countDescendants(t, 'ARC')
+    const acts = countDescendants(t, 'ACT')
+    const episodes = countDescendants(t, 'EPISODE')
+    const shots = countDescendants(t, 'SHOT')
+    const level = deriveLevel(arcs, acts, episodes, shots)
+    return {
+      node: t, id: t.productionid, title: t.productiontitle || 'Untitled',
+      arcs, acts, episodes, shots, level, status: STATUS_LABELS[level],
+      modified: t.updatedate || t.createdate || '', created: t.createdate || '',
+    }
+  })
+
+  const statuses = ['all', ...Array.from(new Set(rows.map(r => r.status)))]
+
+  const filtered = rows.filter(r => {
+    if (statusFilter !== 'all' && r.status !== statusFilter) return false
+    const q = search.trim().toLowerCase()
+    return !q || r.title.toLowerCase().includes(q)
+  })
+  const sorted = [...filtered].sort((a, b) => {
+    let av, bv
+    switch (sortCol) {
+      case 'title':    av = a.title.toLowerCase(); bv = b.title.toLowerCase(); break
+      case 'arcs':     av = a.arcs; bv = b.arcs; break
+      case 'acts':     av = a.acts; bv = b.acts; break
+      case 'episodes': av = a.episodes; bv = b.episodes; break
+      case 'shots':    av = a.shots; bv = b.shots; break
+      case 'status':   av = STATUS_RANK[a.level]; bv = STATUS_RANK[b.level]; break
+      case 'modified': av = a.modified || ''; bv = b.modified || ''; break
+      case 'created':  av = a.created || ''; bv = b.created || ''; break
+      default:         av = ''; bv = ''
+    }
+    if (av < bv) return sortDir === 'asc' ? -1 : 1
+    if (av > bv) return sortDir === 'asc' ? 1 : -1
+    return 0
+  })
+
+  function handleSort(col) {
+    if (sortCol === col) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
+    else { setSortCol(col); setSortDir(col === 'created' || col === 'modified' ? 'desc' : 'asc') }
+  }
+  const arrow = (col) => (sortCol === col ? (sortDir === 'asc' ? ' ↑' : ' ↓') : '')
+  const fmtDate = (d) => (d ? new Date(d).toLocaleDateString() : '—')
+
+  const inpStyle = { background: C.panel, border: `1px solid ${C.border}`, color: C.cream, padding: '8px 12px', fontFamily: "'DM Sans', sans-serif", fontSize: '0.8rem', outline: 'none', borderRadius: 6, boxSizing: 'border-box' }
+  const th = (col, extra = {}) => ({ padding: '10px 14px', textAlign: 'left', fontSize: '0.62rem', color: sortCol === col ? C.cream : C.muted, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: 'pointer', userSelect: 'none', borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap', fontWeight: 600, background: sortCol === col ? 'rgba(201,146,74,0.06)' : 'transparent', ...extra })
+  const numCell = { padding: '10px 14px', borderBottom: `1px solid ${C.border}`, textAlign: 'center', fontSize: '0.82rem', fontVariantNumeric: 'tabular-nums' }
+
+  const Count = ({ n, color }) => <span style={{ color: n > 0 ? color : C.dim, fontWeight: n > 0 ? 600 : 400 }}>{n > 0 ? n : '—'}</span>
+
+  return (
+    <div style={{ flex: 1, overflowY: 'auto', padding: '20px 28px' }}>
+      {/* Toolbar — search + status filter */}
+      <div style={{ display: 'flex', gap: 12, marginBottom: 16, alignItems: 'center' }}>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search titles…" style={{ ...inpStyle, width: 280 }} />
+        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ ...inpStyle, width: 170, cursor: 'pointer' }}>
+          {statuses.map(s => <option key={s} value={s}>{s === 'all' ? 'All Statuses' : s}</option>)}
+        </select>
+        <span style={{ marginLeft: 'auto', fontSize: '0.72rem', color: C.muted }}>{sorted.length} of {rows.length}</span>
+      </div>
+
+      {sorted.length === 0 ? (
+        <div style={{ textAlign: 'center', color: C.muted, marginTop: 60, fontSize: '0.9rem' }}>
+          {search || statusFilter !== 'all' ? 'No matching titles' : <>No titles yet. Click <strong style={{ color: C.gold }}>+ New Title</strong> to start.</>}
+        </div>
+      ) : (
+        <div style={{ border: `1px solid ${C.border}`, borderRadius: 8, overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: "'DM Sans', sans-serif" }}>
+            <thead>
+              <tr style={{ background: C.panel }}>
+                <th style={th('title')} onClick={() => handleSort('title')}>Title{arrow('title')}</th>
+                <th style={th('arcs', { textAlign: 'center' })} onClick={() => handleSort('arcs')}>Arcs{arrow('arcs')}</th>
+                <th style={th('acts', { textAlign: 'center' })} onClick={() => handleSort('acts')}>Acts{arrow('acts')}</th>
+                <th style={th('episodes', { textAlign: 'center' })} onClick={() => handleSort('episodes')}>Episodes{arrow('episodes')}</th>
+                <th style={th('shots', { textAlign: 'center' })} onClick={() => handleSort('shots')}>Shots{arrow('shots')}</th>
+                <th style={th('status')} onClick={() => handleSort('status')}>Status{arrow('status')}</th>
+                <th style={th('modified')} onClick={() => handleSort('modified')}>Modified{arrow('modified')}</th>
+                <th style={{ ...th(''), cursor: 'default', textAlign: 'center' }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((r, i) => (
+                <tr key={r.id}
+                  style={{ background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.015)', cursor: 'pointer', transition: 'background 0.15s' }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(201,146,74,0.06)'}
+                  onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.015)'}
+                  onClick={() => onOpen(r.node)}>
+                  <td style={{ padding: '10px 14px', borderBottom: `1px solid ${C.border}` }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ color: C.gold, fontSize: '0.8rem' }}>{LEVEL_ICONS.TITLE}</span>
+                      <span style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '1rem', color: C.cream }}>{r.title}</span>
+                    </span>
+                  </td>
+                  <td style={numCell}><Count n={r.arcs} color={LEVEL_COLORS.ARC} /></td>
+                  <td style={numCell}><Count n={r.acts} color={LEVEL_COLORS.ACT} /></td>
+                  <td style={numCell}><Count n={r.episodes} color={LEVEL_COLORS.EPISODE} /></td>
+                  <td style={numCell}><Count n={r.shots} color={LEVEL_COLORS.SHOT} /></td>
+                  <td style={{ padding: '10px 14px', borderBottom: `1px solid ${C.border}` }}>
+                    {(() => { const col = LEVEL_COLORS[r.level] || C.muted; return (
+                      <span style={{ background: `${col}22`, border: `1px solid ${col}44`, color: col, padding: '2px 8px', fontSize: '0.6rem', letterSpacing: '0.08em', textTransform: 'uppercase', borderRadius: 3, whiteSpace: 'nowrap' }}>{r.status}</span>
+                    ) })()}
+                  </td>
+                  <td style={{ padding: '10px 14px', borderBottom: `1px solid ${C.border}`, color: C.muted, fontSize: '0.72rem', whiteSpace: 'nowrap' }}>{fmtDate(r.modified)}</td>
+                  <td style={{ padding: '10px 14px', borderBottom: `1px solid ${C.border}`, textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+                    <button onClick={() => onOpen(r.node)} style={{ ...S.btn('ghost'), fontSize: '0.66rem', padding: '4px 12px' }}>Open</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Development() {
   const navigate = useNavigate()
   const [allNodes,    setAllNodes]    = useState([])
@@ -2187,27 +2322,8 @@ Requirements:
 
       {/* Body */}
       {view === 'grid' ? (
-        /* ── GRID VIEW ─────────────────────────────────── */
-        <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px' }}>
-          {titles.length === 0 ? (
-            <div style={{ textAlign: 'center', color: C.muted, marginTop: '60px', fontSize: '0.9rem' }}>
-              No titles yet. Click <strong style={{ color: C.gold }}>+ New Title</strong> to start.
-            </div>
-          ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' }}>
-              {titles.map(t => (
-                <TitleCard
-                  key={t.productionid}
-                  node={t}
-                  onOpen={openTitle}
-                  onGenerateAssets={n => runAI(n, 'assets')}
-                  onSeriesBible={n => runAI(n, 'bible')}
-                  onProductionGuide={n => runAI(n, 'guide')}
-                />
-              ))}
-            </div>
-          )}
-        </div>
+        /* ── LANDING TABLE ─────────────────────────────── */
+        <DevelopmentTable titles={titles} onOpen={openTitle} />
       ) : (
         /* ── DETAIL VIEW ───────────────────────────────── */
         <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
